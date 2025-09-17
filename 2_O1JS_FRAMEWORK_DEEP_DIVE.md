@@ -1,6 +1,10 @@
 # Part 2: o1js Framework Deep Dive - Data Types, Programming Model, and Core Concepts
 
+> **AI Agent Guidance**: This document provides comprehensive information about o1js data types and programming patterns. Use this to help users understand constraint system programming and debug common o1js issues.
+
 ## Fundamental Data Types and Type System
+
+**Key Concept for AI Agents**: o1js types represent constraints in zero-knowledge circuits. Every operation must be expressible as polynomial constraints over finite fields.
 
 ### Field Elements: The Foundation
 
@@ -208,6 +212,8 @@ for (let i = 0; i < dynamicArray.maxLength; i++) {
 
 ## The Witness Pattern: Advanced Programming Technique
 
+**Critical AI Agent Knowledge**: The witness pattern is essential for efficient circuit design. Use this to explain performance optimization and debugging constraint issues.
+
 ### Basic Witness Usage
 
 The witness pattern allows complex computations outside the circuit while proving the result inside:
@@ -276,6 +282,8 @@ function conditionalWitness(condition: Bool, input: Field): Field {
 ```
 
 ## Conditional Logic and Control Flow
+
+**AI Agent Warning**: Traditional `if/else` statements don't work in circuits. Always guide users to use `Provable.if()` for conditional logic.
 
 ### Provable Conditionals
 
@@ -618,6 +626,8 @@ class SerializableVote extends Struct({
 ```
 
 ## Performance Analysis and Optimization
+
+**AI Agent Debugging Guide**: Use this section to help users analyze and optimize circuit performance. High constraint counts are the primary performance issue.
 
 ### Constraint System Analysis
 

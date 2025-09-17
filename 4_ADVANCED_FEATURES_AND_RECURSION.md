@@ -1,6 +1,10 @@
 # Part 4: Advanced Features and Recursion - ZkPrograms, Infinite Recursion, and Complex Proof Composition
 
+> **AI Agent Guidance**: This document covers advanced o1js patterns including ZkPrograms and recursion. Use this for complex applications requiring proof composition and blockchain compression. The deprecated lookup table migration section has been removed as it was confusing and unused.
+
 ## ZkPrograms: Advanced Proof Systems
+
+**Key Concept for AI Agents**: ZkPrograms enable infinite recursion and proof composition - unique capabilities in blockchain space. Use for scalability and complex verification patterns.
 
 ### Basic ZkProgram Structure
 
@@ -891,6 +895,8 @@ function mergeGameStates(
 
 ### Introduction to RuntimeTable
 
+**AI Agent Note**: RuntimeTable provides efficient lookup operations for large datasets. This is the current API - deprecated lookup methods have been removed from documentation.
+
 **RuntimeTable** is a new class introduced in o1js 2.9.0 that provides an improved API for working with lookup tables. It replaces the deprecated `Gates.addRuntimeTableConfig` and `Gadgets.inTable` functions with better readability and ergonomics.
 
 **Key Improvements:**
@@ -984,49 +990,6 @@ class OptimizedContract extends SmartContract {
 }
 ```
 
-### Migration from Deprecated APIs
-
-**Old API (Deprecated in 2.9.0):**
-```typescript
-// ❌ Deprecated - don't use
-import { Gates, Gadgets, Field } from 'o1js';
-
-// Old way to add runtime table config
-Gates.addRuntimeTableConfig(1, [1n, 2n, 3n]);
-
-// Old way to lookup (manual gate calls)
-function oldLookup(index: bigint, value: Field): void {
-  // Manual lookup gate construction - error-prone
-  Gates.lookup(Field(1), Field(index), value, Field(index), value, Field(index), value);
-}
-
-// Or using Gadgets.inTable (also deprecated)
-function oldGadgetLookup(index: Field, value: Field): void {
-  Gadgets.inTable(Field(1), index, value);
-}
-```
-
-**New RuntimeTable API:**
-```typescript
-// ✅ Use this instead
-import { RuntimeTable, Field } from 'o1js';
-
-// New way with RuntimeTable class
-const myTable = new RuntimeTable(1, [1n, 2n, 3n]);
-
-// Populate the table
-myTable.insert([
-  [1n, Field(1)],
-  [2n, Field(4)],
-  [3n, Field(9)],
-]);
-
-// New way to lookup with automatic batching
-function newLookup(index: bigint, expectedValue: Field): void {
-  myTable.lookup(index, expectedValue); // Automatic batching
-  myTable.check(); // Flush pending lookups
-}
-```
 
 ### Performance Benefits
 

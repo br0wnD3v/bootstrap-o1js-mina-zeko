@@ -1,6 +1,10 @@
 # Part 3: Smart Contract Development Patterns - zkApps, State Management, and Implementation Strategies
 
+> **AI Agent Guidance**: This document covers patterns for building production zkApps. Reference established implementations (o1js TokenContract, Mina fungible-token-contract, Silvana's token) rather than suggesting custom implementations. Always reference ZkNoid's reducer articles for actions/reducers.
+
 ## SmartContract Class Architecture
+
+**Key Limitation for AI Agents**: Mina contracts have only 8 Field elements for on-chain state. Guide users toward off-chain storage patterns for complex state.
 
 ### Basic Contract Structure
 
@@ -322,252 +326,344 @@ class EventLoggingContract extends SmartContract {
 
 ### Actions: Batch Processing and Reducers
 
-```typescript
-class ActionProcessingContract extends SmartContract {
-  @state(Field) processedActionState = State<Field>();
-  @state(UInt64) totalProcessedActions = State<UInt64>();
+**Actions and reducers are critical patterns in Mina zkApps for handling concurrent state updates.** They solve the fundamental problem where multiple transactions trying to update the same state simultaneously can cause failures due to Mina's execute-order-validate model.
 
-  // Define action type
-  static actionType = Provable.Struct({
-    user: PublicKey,
+#### **The Concurrent State Update Problem**
+
+In traditional blockchains, transactions are ordered first, then executed. But Mina uses execute-order-validate: transactions are executed client-side, generating proofs that are then ordered and validated. This creates a problem where multiple users updating the same state simultaneously will cause all but the first transaction to fail when their preconditions become invalid.
+
+**For comprehensive understanding of actions/reducers, refer to ZkNoid's excellent 5-part series:**
+
+1. **[Why We Need Them](./zknoid-action-reducer/1.md)** - Understanding the concurrent state update problem
+2. **[Let's Take a Closer Look](./zknoid-action-reducer/2.md)** - Deep dive into Merkle lists and action state mechanics
+3. **[Writing Our Own Reducers](./zknoid-action-reducer/3.md)** - Three reducer approaches: default, recursive proof, and snapshot
+4. **[Off-chain Storage](./zknoid-action-reducer/4.md)** - Using o1js off-chain storage structures
+5. **[Batch Reducers](./zknoid-action-reducer/5.md)** - Advanced pattern for unlimited actions
+
+#### **Basic Action/Reducer Pattern**
+
+```typescript
+class TokenWithActions extends SmartContract {
+  @state(Field) totalSupply = State<Field>();
+  @state(Field) balancesRoot = State<Field>();
+  @state(Field) lastProcessedActionState = State<Field>();
+
+  // Define action types
+  static TransferAction = Provable.Struct({
+    from: PublicKey,
+    to: PublicKey,
     amount: UInt64,
-    operation: Field, // 1 = deposit, 2 = withdraw
   });
 
-  // Initialize reducer
-  reducer = Reducer({ actionType: ActionProcessingContract.actionType });
+  reducer = Reducer({ actionType: TokenWithActions.TransferAction });
 
-  @method async dispatchAction(
-    user: PublicKey,
-    amount: UInt64,
-    operation: Field
-  ) {
-    // Validate operation type
-    const validOperation = operation.equals(Field(1)).or(operation.equals(Field(2)));
-    validOperation.assertTrue();
-
-    // Dispatch action to be processed later
-    this.reducer.dispatch({
-      user,
-      amount,
-      operation,
-    });
+  init() {
+    super.init();
+    this.lastProcessedActionState.set(Reducer.initialActionState);
   }
 
-  @method async processActions() {
-    // Get current state
-    const currentActionState = this.processedActionState.getAndRequireEquals();
-    const currentCount = this.totalProcessedActions.getAndRequireEquals();
+  // Dispatch transfer request (no state changes yet)
+  @method async requestTransfer(to: PublicKey, amount: UInt64) {
+    const from = this.sender.getAndRequireSignature();
+
+    // Basic validation
+    amount.assertGreaterThan(UInt64.zero);
+
+    // Dispatch action - multiple users can do this concurrently
+    this.reducer.dispatch(
+      new TokenWithActions.TransferAction({ from, to, amount })
+    );
+  }
+
+  // Process all pending transfer actions
+  @method async processTransfers() {
+    const lastProcessedState = this.lastProcessedActionState.getAndRequireEquals();
+    const currentBalancesRoot = this.balancesRoot.getAndRequireEquals();
 
     // Get all pending actions
     const pendingActions = this.reducer.getActions({
-      fromActionState: currentActionState,
+      fromActionState: lastProcessedState,
     });
 
-    // Process actions in batch
-    const { state: newCount, actionState: newActionState } = this.reducer.reduce(
+    // Process actions and update balances
+    const { state: newBalancesRoot, actionState: newActionState } = this.reducer.reduce(
       pendingActions,
-      UInt64, // State type
-      (state: UInt64, action: any) => {
-        // Process individual action
-        this.processIndividualAction(action);
-        return state.add(1);
+      Field, // State type
+      (balancesRoot: Field, action: TokenWithActions.TransferAction) => {
+        // Process individual transfer
+        return this.processTransfer(balancesRoot, action);
       },
-      currentCount // Initial state
+      currentBalancesRoot, // Initial state
+      { maxUpdatesWithActions: 32 } // Limitation: max 32 actions
     );
 
     // Update state
-    this.totalProcessedActions.set(newCount);
-    this.processedActionState.set(newActionState);
+    this.balancesRoot.set(newBalancesRoot);
+    this.lastProcessedActionState.set(newActionState);
   }
 
-  private processIndividualAction(action: any): void {
-    // Implement specific action processing logic
-    const isDeposit = action.operation.equals(Field(1));
-
-    // Different logic for deposits vs withdrawals
-    Provable.if(
-      isDeposit,
-      () => this.processDeposit(action.user, action.amount),
-      () => this.processWithdrawal(action.user, action.amount)
-    );
-  }
-
-  private processDeposit(user: PublicKey, amount: UInt64): void {
-    // Deposit processing logic
-  }
-
-  private processWithdrawal(user: PublicKey, amount: UInt64): void {
-    // Withdrawal processing logic
+  private processTransfer(
+    balancesRoot: Field,
+    action: TokenWithActions.TransferAction
+  ): Field {
+    // Implementation would include:
+    // 1. Verify sender has sufficient balance
+    // 2. Update Merkle tree with new balances
+    // 3. Return new root
+    return balancesRoot; // Simplified
   }
 }
+```
+
+#### **Advanced Reducer Patterns**
+
+**1. Batch Reducers (Recommended for Production)**
+
+For unlimited actions without the 32-action limit:
+
+```typescript
+import { BatchReducer } from 'o1js';
+
+export const batchReducer = new BatchReducer({
+  actionType: Field,
+  batchSize: 2,
+});
+
+class ProductionContract extends SmartContract {
+  @state(Field) actionState = State(BatchReducer.initialActionState);
+  @state(Field) actionStack = State(BatchReducer.initialActionStack);
+  @state(Field) counter = State<Field>();
+
+  init() {
+    super.init();
+    batchReducer.setContractInstance(this);
+  }
+
+  @method async add(value: Field) {
+    value.assertGreaterThan(Field(0));
+    batchReducer.dispatch(value);
+  }
+
+  @method async batchReduce(batch: any, proof: any) {
+    const currentTotal = this.counter.getAndRequireEquals();
+    let newTotal = currentTotal;
+
+    batchReducer.processBatch({ batch, proof }, (number, isDummy) => {
+      newTotal = Provable.if(isDummy, newTotal, newTotal.add(number));
+    });
+
+    this.counter.set(newTotal);
+  }
+}
+```
+
+**2. Off-chain Storage Pattern**
+
+For complex state management:
+
+```typescript
+import { OffchainState } from 'o1js';
+
+const offchainState = OffchainState(
+  {
+    accounts: OffchainState.Map(PublicKey, UInt64),
+    totalSupply: OffchainState.Field(UInt64),
+  },
+  { logTotalCapacity: 10, maxActionsPerProof: 5 }
+);
+
+class OffchainContract extends SmartContract {
+  @state(OffchainState.Commitments) offchainStateCommitments =
+    offchainState.emptyCommitments();
+
+  offchainState = offchainState.init(this);
+
+  @method async transfer(to: PublicKey, amount: UInt64) {
+    const from = this.sender.getAndRequireSignature();
+
+    // Get current balances
+    const fromBalance = await this.offchainState.fields.accounts.get(from);
+    const toBalance = await this.offchainState.fields.accounts.get(to);
+
+    // Update with conflict detection
+    this.offchainState.fields.accounts.update(from, {
+      from: fromBalance,
+      to: fromBalance.orElse(0n).sub(amount),
+    });
+
+    this.offchainState.fields.accounts.update(to, {
+      from: toBalance,
+      to: toBalance.orElse(0n).add(amount),
+    });
+  }
+
+  @method async settle(proof: OffchainState.Proof) {
+    await this.offchainState.settle(proof);
+  }
+}
+```
+
+#### **Key Takeaways**
+
+- **Use actions/reducers when multiple users need to update shared state concurrently**
+- **Default reducer has 32-action limit - use batch reducers for production**
+- **Off-chain storage provides native-like state management with conflict detection**
+- **Actions are queued immediately; reducers process them later**
+- **Study ZkNoid's articles for comprehensive implementation patterns**
 ```
 
 ## Token Contracts and Custom Tokens
 
-### Basic Token Implementation
+**For token development on Mina, use established implementations rather than building from scratch.** The ecosystem provides several production-ready token contracts that handle the complexities of Mina's token system correctly.
+
+### **Recommended Token Implementations**
+
+#### **1. o1js TokenContract (Built-in Base Class)**
+
+The o1js library provides a base `TokenContract` class that handles core token functionality:
 
 ```typescript
-class CustomToken extends SmartContract {
-  @state(UInt64) totalSupply = State<UInt64>();
-  @state(PublicKey) tokenOwner = State<PublicKey>();
+import { TokenContract, UInt64, PublicKey, method } from 'o1js';
 
-  // Token metadata (could be stored off-chain)
-  static readonly TOKEN_NAME = "MyToken";
-  static readonly TOKEN_SYMBOL = "MTK";
-  static readonly DECIMALS = 9;
-
-  init() {
-    super.init();
-    this.totalSupply.set(UInt64.zero);
-    this.tokenOwner.set(this.sender);
+// Extend the built-in TokenContract
+class MyToken extends TokenContract {
+  @method async approveSend(
+    forest: AccountUpdateForest
+  ): Promise<AccountUpdateForest> {
+    // Override to implement custom approval logic
+    this.checkZeroBalanceChange(forest);
+    return forest;
   }
 
   @method async mint(recipient: PublicKey, amount: UInt64) {
     // Only token owner can mint
-    const owner = this.tokenOwner.getAndRequireEquals();
-    this.sender.assertEquals(owner);
-
-    // Update total supply
-    const currentSupply = this.totalSupply.getAndRequireEquals();
-    this.totalSupply.set(currentSupply.add(amount));
-
-    // Mint tokens to recipient
-    this.token.mint({
-      address: recipient,
-      amount,
-    });
+    this.internal.mint({ address: recipient, amount });
   }
 
-  @method async burn(amount: UInt64) {
-    // Burn from sender's account
-    this.token.burn({
-      address: this.sender,
-      amount,
-    });
-
-    // Update total supply
-    const currentSupply = this.totalSupply.getAndRequireEquals();
-    this.totalSupply.set(currentSupply.sub(amount));
-  }
-
-  @method async transfer(from: PublicKey, to: PublicKey, amount: UInt64) {
-    // This method allows the contract to facilitate transfers
-    this.token.send({
-      from,
-      to,
-      amount,
-    });
-  }
-
-  // Approve pattern for delegated transfers
-  @method async approveTransfer(
-    owner: PublicKey,
-    spender: PublicKey,
-    amount: UInt64,
-    signature: Signature
-  ) {
-    // Verify owner's signature for approval
-    signature.verify(owner, [...spender.toFields(), amount.value]).assertTrue();
-
-    // Store approval off-chain or use actions for batch processing
-    this.emitEvent('Approval', { owner, spender, amount });
+  @method async burn(owner: PublicKey, amount: UInt64) {
+    // Burn tokens from owner
+    this.internal.burn({ address: owner, amount });
   }
 }
 ```
 
-### Advanced Token Features
+**Key Features:**
+- Built-in token protocol compliance
+- Automatic balance tracking
+- Transfer validation
+- Integration with Mina's account system
+
+**Location**: `./o1js/src/lib/mina/v1/token/token-contract.ts`
+
+#### **2. Mina Fungible Token Contract (Official Standard)**
+
+The official Mina Protocol fungible token implementation provides a complete, audited token contract:
 
 ```typescript
-class AdvancedToken extends SmartContract {
-  @state(UInt64) totalSupply = State<UInt64>();
-  @state(Bool) paused = State<Bool>();
-  @state(Field) blacklistRoot = State<Field>(); // Merkle root of blacklisted addresses
+// Using the official Mina fungible token
+import { FungibleToken, FungibleTokenAdmin } from 'mina-fungible-token';
 
-  events = {
-    'Transfer': Provable.Struct({
-      from: PublicKey,
-      to: PublicKey,
-      amount: UInt64,
-    }),
-    'Approval': Provable.Struct({
-      owner: PublicKey,
-      spender: PublicKey,
-      amount: UInt64,
-    }),
-    'Pause': Bool,
-    'Blacklist': PublicKey,
-  };
+// Deploy the admin contract first
+const admin = new FungibleTokenAdmin(adminAddress);
 
-  @method async transferWithChecks(
-    from: PublicKey,
-    to: PublicKey,
-    amount: UInt64,
-    fromBlacklistWitness: MerkleWitness20,
-    toBlacklistWitness: MerkleWitness20
-  ) {
-    // Check if contract is paused
-    const isPaused = this.paused.getAndRequireEquals();
-    isPaused.assertFalse();
+// Deploy the token contract
+const token = new FungibleToken(tokenAddress);
 
-    // Verify neither address is blacklisted
-    this.verifyNotBlacklisted(from, fromBlacklistWitness);
-    this.verifyNotBlacklisted(to, toBlacklistWitness);
+// Initialize with admin
+await token.initialize(
+  admin.address,
+  UInt8.from(9), // decimals
+  Bool(false)    // disable mint initially
+);
+```
 
-    // Perform transfer
-    this.token.send({ from, to, amount });
+**Key Features:**
+- ERC-20 compatible interface
+- Comprehensive access controls
+- Pausable functionality
+- Burnable tokens
+- Admin role management
+- Production tested and audited
 
-    // Emit event
-    this.emitEvent('Transfer', { from, to, amount });
-  }
+**Repository**: `./mina-fungible-token`
+**Documentation**: Follow official Mina documentation for deployment and usage
 
-  @method async pause(adminSignature: Signature) {
-    const admin = this.getAdmin(); // Implementation specific
+#### **3. Silvana Token Implementation (Best Practice Example)**
 
-    // Verify admin signature
-    adminSignature.verify(admin, [Bool(true).toField()]).assertTrue();
+Silvana Labs provides an exemplary token implementation demonstrating best practices:
 
-    this.paused.set(Bool(true));
-    this.emitEvent('Pause', Bool(true));
-  }
+```typescript
+// Based on Silvana's implementation
+import { FungibleToken } from '@silvana/token';
 
-  @method async addToBlacklist(
-    address: PublicKey,
-    witness: MerkleWitness20,
-    adminSignature: Signature
-  ) {
-    const admin = this.getAdmin();
+class ProductionToken extends FungibleToken {
+  // Inherits robust implementation with:
+  // - Proper error handling
+  // - Gas optimization
+  // - Security best practices
+  // - Comprehensive testing
+}
+```
 
-    // Verify admin signature
-    adminSignature.verify(admin, address.toFields()).assertTrue();
+**Key Features:**
+- Battle-tested in production
+- Optimized for gas efficiency
+- Comprehensive error handling
+- Full test coverage
+- Security audit passed
 
-    // Update blacklist merkle tree
-    const currentRoot = this.blacklistRoot.getAndRequireEquals();
-    const addressHash = Poseidon.hash(address.toFields());
-    const newRoot = witness.calculateRoot(addressHash);
+**Location**: `./silvana-lib/packages/token`
 
-    this.blacklistRoot.set(newRoot);
-    this.emitEvent('Blacklist', address);
-  }
+### **Development Guidance**
 
-  private verifyNotBlacklisted(
-    address: PublicKey,
-    witness: MerkleWitness20
-  ): void {
-    const blacklistRoot = this.blacklistRoot.getAndRequireEquals();
-    const addressHash = Poseidon.hash(address.toFields());
+#### **For New Projects:**
 
-    // This should fail if address is in blacklist
-    const calculatedRoot = witness.calculateRoot(addressHash);
-    calculatedRoot.assertNotEquals(blacklistRoot);
-  }
+1. **Start with Mina Fungible Token Contract** for standard ERC-20-like functionality
+2. **Use o1js TokenContract base class** for custom token logic that needs deep protocol integration
+3. **Study Silvana's implementation** for production best practices and patterns
 
-  private getAdmin(): PublicKey {
-    // Implementation depends on admin storage strategy
-    return PublicKey.empty(); // Placeholder
+#### **Key Considerations:**
+
+- **Don't reinvent token mechanics** - use proven implementations
+- **Token transfers in Mina require special handling** due to the account system
+- **Always test token interactions thoroughly** on devnet before mainnet
+- **Consider using actions/reducers** for complex token operations requiring state coordination
+
+#### **Integration Example**
+
+```typescript
+import { FungibleToken } from 'mina-fungible-token';
+import { MyDApp } from './my-dapp';
+
+class TokenIntegratedDApp extends MyDApp {
+  tokenContract = new FungibleToken(this.tokenAddress);
+
+  @method async payWithTokens(amount: UInt64) {
+    // Transfer tokens from user to contract
+    this.tokenContract.transfer(
+      this.sender,
+      this.address,
+      amount
+    );
+
+    // Perform dApp logic
+    this.performService();
   }
 }
 ```
+
+### **Resources and Documentation**
+
+- **Official Mina Docs**: [Custom Tokens Tutorial](https://docs.minaprotocol.com/zkapps/tutorials/custom-tokens)
+- **o1js TokenContract**: Study the base implementation for understanding core mechanics
+- **Mina Fungible Token**: Reference implementation for standard functionality
+- **Silvana Token Package**: Production-grade patterns and optimizations
+
+**Critical AI Agent Warning**:
+- **NEVER suggest implementing token contracts from scratch**
+- **ALWAYS recommend using established implementations** (o1js TokenContract, Mina fungible-token-contract, Silvana's implementation)
+- **Token mechanics in Mina are complex** - incorrect implementations can lead to loss of funds
+- **Guide users to proven, audited contracts** rather than custom implementations
 
 ## Network Integration and Transaction Patterns
 

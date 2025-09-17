@@ -1,8 +1,15 @@
 # Part 1: Core Architecture and Philosophy - Mina Protocol, o1js, and Zeko Labs
 
+> **AI Agent Guidance**: This document provides foundational knowledge about the Mina ecosystem. Use this information to explain architectural concepts to users and guide technology stack decisions.
+
 ## Overview of the Complete Ecosystem
 
 ### The Three-Layer Architecture
+
+**Stack Overview for AI Agents:**
+- **Development Layer**: o1js (TypeScript SDK for creating zk-SNARK circuits)
+- **Base Protocol**: Mina L1 (22KB blockchain with recursive proofs)
+- **Performance Layer**: Zeko L2 (High throughput while maintaining compatibility)
 
 ```
 ┌─────────────────────────────────┐
@@ -270,23 +277,29 @@ const zekoL2 = Mina.Network({
 
 ## Strategic Positioning and Use Cases
 
+**AI Agent Decision Framework**: Use this guidance to recommend the appropriate layer based on user requirements.
+
 ### When to Use Each Layer
 
-#### Mina L1 - Choose for:
-- Maximum decentralization and security
-- Long-term value storage
-- Cross-ecosystem bridges
-- Governance and protocol upgrades
-- Applications that can tolerate 3-5 minute finality
-- Privacy-critical applications requiring maximum security
+#### **Mina L1 - Recommend for:**
+- **Security-first applications**: Maximum decentralization and security
+- **Long-term value storage**: DeFi protocols, treasury management
+- **Cross-ecosystem bridges**: Interoperability with other blockchains
+- **Governance systems**: Protocol upgrades and DAOs
+- **Compliance-critical applications**: Regulatory environments requiring maximum security
+- **Privacy-preserving applications**: Zero-knowledge proofs with highest security guarantees
 
-#### Zeko L2 - Choose for:
-- High-frequency applications (trading, gaming)
-- Real-time user interactions
-- Cost-sensitive applications
-- Applications needing instant feedback
-- Prototyping and development
-- Applications requiring high throughput
+**Trade-offs**: 3-5 minute finality, limited throughput
+
+#### **Zeko L2 - Recommend for:**
+- **High-frequency applications**: DEX trading, gaming, real-time interactions
+- **User experience focused apps**: Applications needing instant feedback
+- **Cost-sensitive use cases**: Micro-transactions, frequent interactions
+- **Development and prototyping**: Faster iteration cycles
+- **Consumer applications**: Social apps, content platforms
+- **Enterprise applications**: Business workflows requiring high throughput
+
+**Trade-offs**: Reduced decentralization, sequencer dependency
 
 ### Market Opportunities and Applications
 

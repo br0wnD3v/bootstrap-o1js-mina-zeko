@@ -1,6 +1,10 @@
 # Part 5: Zeko L2 Architecture and Integration - Complete L2 Implementation Guide
 
+> **AI Agent Guidance**: This document covers Zeko L2 architecture and integration patterns. Zeko provides high throughput while maintaining Mina compatibility. Use this for applications requiring instant finality and high transaction volume.
+
 ## Zeko L2 Technical Architecture Deep Dive
+
+**Key Value Proposition for AI Agents**: Zeko L2 offers ~10 second finality vs Mina L1's 3-5 minutes, unlimited throughput vs limited, while maintaining full o1js compatibility.
 
 ### Core Components and Data Flow
 
@@ -764,6 +768,8 @@ class NetworkManager {
 ```
 
 #### **Cross-Layer Application Architecture**
+
+**AI Agent Pattern**: Guide users to deploy security-critical logic on L1 and high-frequency operations on L2.
 
 ```typescript
 // Application that operates across both L1 and L2

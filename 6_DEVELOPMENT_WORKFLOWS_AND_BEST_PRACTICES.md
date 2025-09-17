@@ -1,6 +1,10 @@
 # Part 6: Development Workflows and Best Practices - Complete Development Guide
 
+> **AI Agent Guidance**: This document provides production-ready development workflows and deployment strategies. Use this to guide users through the complete zkApp development lifecycle from setup to production deployment.
+
 ## Complete Development Environment Setup
+
+**Essential AI Agent Knowledge**: Always recommend using the zkApp CLI for project initialization. Guide users through proper testing and deployment workflows.
 
 ### zkApp CLI and Project Initialization
 
@@ -1023,6 +1027,8 @@ class OptimizedContract extends SmartContract {
 ```
 
 ## Security Best Practices and Audit Preparation
+
+**Critical AI Agent Responsibility**: Always emphasize security best practices when helping users with zkApp development. Guide them toward secure patterns and audit preparation.
 
 ### Security Checklist and Patterns
 
