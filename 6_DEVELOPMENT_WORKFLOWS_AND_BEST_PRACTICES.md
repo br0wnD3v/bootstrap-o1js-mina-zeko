@@ -103,7 +103,7 @@ class ConfigManager {
 
     environments.forEach(env => {
       try {
-        const config = require(`../config/${env}.json`);
+        const config = require(`config/${env}.json`);
         this.configs.set(env, config);
       } catch (error) {
         console.warn(`Config file for ${env} not found`);
@@ -149,7 +149,7 @@ await configManager.setupNetwork('development');
 
 ```typescript
 // tests/unit/TokenContract.test.ts
-import { TokenContract } from '../../src/contracts/tokens/TokenContract';
+import { TokenContract } from 'src/contracts/tokens/TokenContract';
 import { Field, UInt64, PrivateKey, PublicKey, AccountUpdate, Mina } from 'o1js';
 
 describe('TokenContract', () => {
@@ -273,9 +273,9 @@ describe('TokenContract', () => {
 
 ```typescript
 // tests/integration/DEX.integration.test.ts
-import { DEXContract } from '../../src/contracts/DEXContract';
-import { TokenContract } from '../../src/contracts/tokens/TokenContract';
-import { LiquidityPoolContract } from '../../src/contracts/LiquidityPoolContract';
+import { DEXContract } from 'src/contracts/DEXContract';
+import { TokenContract } from 'src/contracts/tokens/TokenContract';
+import { LiquidityPoolContract } from 'src/contracts/LiquidityPoolContract';
 
 describe('DEX Integration Tests', () => {
   let dex: DEXContract;
@@ -349,8 +349,8 @@ describe('DEX Integration Tests', () => {
 
 ```typescript
 // tests/e2e/deployment.e2e.test.ts
-import { ConfigManager } from '../../src/config/ConfigManager';
-import { DeploymentManager } from '../../src/scripts/DeploymentManager';
+import { ConfigManager } from 'src/config/ConfigManager';
+import { DeploymentManager } from 'src/scripts/DeploymentManager';
 
 describe('E2E Deployment Tests', () => {
   let configManager: ConfigManager;
@@ -436,7 +436,7 @@ describe('E2E Deployment Tests', () => {
 ```typescript
 // scripts/DeploymentManager.ts
 import { PrivateKey, PublicKey, Mina, AccountUpdate } from 'o1js';
-import { ConfigManager } from '../config/ConfigManager';
+import { ConfigManager } from 'config/ConfigManager';
 
 interface DeploymentResult {
   success: boolean;
@@ -643,7 +643,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          file: ./coverage/lcov.info
+          file: coverage/lcov.info
 
   build:
     runs-on: ubuntu-latest

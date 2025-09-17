@@ -555,6 +555,273 @@ function hmacSha256(key: UInt8[], message: UInt8[]): UInt8[] {
 }
 ```
 
+## Transaction Fees and Error Handling
+
+**Critical AI Agent Knowledge**: Mina has a unique fee system and error handling patterns that differ from other blockchains.
+
+### **Fee System in Mina**
+
+```typescript
+import { Mina, PrivateKey, UInt64 } from 'o1js';
+
+// Mina uses a constant fee structure
+const fee = UInt64.from(100_000_000); // 0.1 MINA (in nanomina)
+
+// Transaction with explicit fee
+const tx = await Mina.transaction({
+  sender: senderAccount,
+  fee: fee, // Optional - defaults to reasonable fee
+  memo: 'My zkApp transaction', // Optional transaction memo
+}, () => {
+  contract.myMethod(args);
+});
+
+// Common fee patterns
+const STANDARD_FEE = UInt64.from(100_000_000); // 0.1 MINA
+const PRIORITY_FEE = UInt64.from(1_000_000_000); // 1 MINA for faster processing
+```
+
+### **Error Handling Patterns**
+
+```typescript
+// 1. Assertion Errors (Most Common)
+class ValidatedContract extends SmartContract {
+  @method async withdraw(amount: UInt64) {
+    const balance = this.account.balance.getAndRequireEquals();
+
+    // This creates a constraint - transaction fails if false
+    amount.assertLessThanOrEqual(balance);
+
+    // Alternative with custom error context
+    amount.assertGreaterThan(UInt64.zero, 'Amount must be positive');
+
+    // Send with proper validation
+    this.send({ to: this.sender, amount });
+  }
+}
+
+// 2. Precondition Failures
+@method async restrictedMethod() {
+  // This creates a precondition on the account state
+  const currentNonce = this.account.nonce.getAndRequireEquals();
+
+  // If account nonce changes between proof generation and validation,
+  // transaction will fail with precondition error
+}
+
+// 3. Network State Errors
+try {
+  const account = await Mina.getAccount(publicKey);
+  console.log('Account exists:', account);
+} catch (error) {
+  if (error.message.includes('Account not found')) {
+    console.log('Account does not exist yet');
+    // Handle new account case
+  }
+}
+```
+
+### **Complete Transaction Lifecycle with Error Handling**
+
+```typescript
+export class TransactionManager {
+  static async executeTransaction(
+    contract: SmartContract,
+    method: string,
+    args: any[],
+    options: {
+      fee?: UInt64;
+      sender?: PrivateKey;
+      memo?: string;
+      retries?: number;
+    } = {}
+  ): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    const {
+      fee = UInt64.from(100_000_000),
+      sender = PrivateKey.random(), // Should be provided
+      memo = '',
+      retries = 3
+    } = options;
+
+    const senderAccount = sender.toPublicKey();
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        // 1. Create transaction
+        console.log(`Attempt ${attempt + 1}: Creating transaction...`);
+
+        const tx = await Mina.transaction({
+          sender: senderAccount,
+          fee,
+          memo
+        }, () => {
+          // Call the contract method dynamically
+          (contract as any)[method](...args);
+        });
+
+        // 2. Generate proof
+        console.log('Generating proof...');
+        await tx.prove();
+
+        // 3. Sign transaction
+        console.log('Signing transaction...');
+        const signedTx = tx.sign([sender]);
+
+        // 4. Send transaction
+        console.log('Sending transaction...');
+        const pendingTx = await signedTx.send();
+
+        // 5. Wait for confirmation
+        console.log('Waiting for confirmation...');
+        await this.waitForConfirmation(pendingTx.hash);
+
+        return {
+          success: true,
+          txHash: pendingTx.hash
+        };
+
+      } catch (error) {
+        console.log(`Attempt ${attempt + 1} failed:`, error.message);
+
+        // Check if it's a retryable error
+        if (this.isRetryableError(error)) {
+          if (attempt < retries - 1) {
+            console.log('Retrying in 5 seconds...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            continue;
+          }
+        }
+
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Max retries exceeded'
+    };
+  }
+
+  private static isRetryableError(error: any): boolean {
+    const retryableErrors = [
+      'Account_precondition_unsatisfied',
+      'Network_error',
+      'Timeout',
+      'Invalid_nonce'
+    ];
+
+    return retryableErrors.some(retryableError =>
+      error.message.includes(retryableError)
+    );
+  }
+
+  private static async waitForConfirmation(txHash: string): Promise<void> {
+    const maxAttempts = 60; // 10 minutes with 10-second intervals
+
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const status = await Mina.getTransactionStatus(txHash);
+
+        if (status === 'INCLUDED') {
+          console.log('Transaction confirmed!');
+          return;
+        } else if (status === 'REJECTED') {
+          throw new Error('Transaction was rejected');
+        }
+
+        // Transaction still pending
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+      } catch (error) {
+        if (i === maxAttempts - 1) {
+          throw new Error('Transaction confirmation timeout');
+        }
+
+        // Continue waiting
+        await new Promise(resolve => setTimeout(resolve, 10000));
+      }
+    }
+  }
+}
+
+// Usage example with comprehensive error handling
+async function safeContractInteraction() {
+  try {
+    const result = await TransactionManager.executeTransaction(
+      myContract,
+      'transfer',
+      [recipientAddress, UInt64.from(1000)],
+      {
+        fee: UInt64.from(200_000_000), // Higher fee for priority
+        sender: myPrivateKey,
+        memo: 'Token transfer',
+        retries: 5
+      }
+    );
+
+    if (result.success) {
+      console.log('Transaction successful:', result.txHash);
+    } else {
+      console.error('Transaction failed:', result.error);
+    }
+  } catch (error) {
+    console.error('Unexpected error:', error);
+  }
+}
+```
+
+### **Common Error Types and Solutions**
+
+```typescript
+// Error patterns AI agents should handle
+export const MinaErrorPatterns = {
+  INSUFFICIENT_BALANCE: {
+    pattern: /insufficient.*balance/i,
+    solution: 'Check account balance before transaction',
+    code: `
+const balance = await Mina.getBalance(account);
+if (balance.lessThan(amount.add(fee))) {
+  throw new Error('Insufficient balance');
+}`
+  },
+
+  PRECONDITION_FAILED: {
+    pattern: /precondition.*failed/i,
+    solution: 'Account state changed during proof generation',
+    code: `
+// Use getAndRequireEquals() carefully
+const balance = this.account.balance.getAndRequireEquals();
+// Consider using get() if you can handle state changes
+const balance = this.account.balance.get();`
+  },
+
+  INVALID_PROOF: {
+    pattern: /invalid.*proof/i,
+    solution: 'Proof generation failed or circuit constraints not satisfied',
+    code: `
+// Ensure all assertions are satisfiable
+amount.assertGreaterThan(UInt64.zero);
+// Check constraint system
+const analysis = Provable.constraintSystem(() => {
+  myMethod(testInputs);
+});`
+  },
+
+  NONCE_MISMATCH: {
+    pattern: /nonce.*mismatch/i,
+    solution: 'Account nonce changed between transactions',
+    code: `
+// Fetch fresh account state
+const account = await Mina.getAccount(publicKey);
+const currentNonce = account.nonce;
+// Wait for previous transaction to confirm before sending next`
+  }
+};
+```
+
 ## Serialization and Encoding
 
 ### Field Packing and Unpacking

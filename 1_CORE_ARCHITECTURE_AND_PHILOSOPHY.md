@@ -275,6 +275,151 @@ const zekoL2 = Mina.Network({
 });
 ```
 
+## Mina Transaction Model and Account Updates
+
+**Critical AI Agent Knowledge**: Understanding Mina's unique transaction model is essential for building any zkApp.
+
+### **AccountUpdate: The Transaction Building Block**
+
+Every Mina transaction consists of one or more **AccountUpdates** - atomic state changes to accounts:
+
+```typescript
+// Basic transaction structure
+const tx = await Mina.transaction(senderPublicKey, () => {
+  // Each contract method call creates AccountUpdates
+  contract.myMethod(args);
+
+  // You can also create manual AccountUpdates
+  AccountUpdate.fundNewAccount(senderPublicKey); // Pay for new account creation
+});
+
+// Prove and send
+await tx.prove();
+await tx.send();
+```
+
+### **Key Transaction Concepts**
+
+```typescript
+import { Mina, PrivateKey, PublicKey, AccountUpdate } from 'o1js';
+
+// 1. Network Connection (Essential First Step)
+const Local = Mina.LocalBlockchain({ proofsEnabled: true });
+Mina.setActiveInstance(Local);
+
+// Or connect to live network
+const network = Mina.Network({
+  mina: 'https://api.minascan.io/node/devnet/v1/graphql',
+  archive: 'https://api.minascan.io/archive/devnet/v1/graphql'
+});
+Mina.setActiveInstance(network);
+
+// 2. Key Management
+const deployerKey = PrivateKey.random();
+const deployerAccount = deployerKey.toPublicKey();
+
+// Fund account (for local blockchain)
+const localAccounts = Local.testAccounts;
+const fundingAccount = localAccounts[0].privateKey;
+
+// 3. Contract Deployment Pattern
+const contractKey = PrivateKey.random();
+const contractAddress = contractKey.toPublicKey();
+const contract = new MyContract(contractAddress);
+
+const deployTx = await Mina.transaction(deployerAccount, () => {
+  AccountUpdate.fundNewAccount(deployerAccount); // Pay for account creation
+  contract.deploy({ zkappKey: contractKey });
+});
+
+await deployTx.prove();
+await deployTx.sign([deployerKey, contractKey]).send();
+
+// 4. Contract Interaction Pattern
+const interactionTx = await Mina.transaction(deployerAccount, () => {
+  contract.myMethod(arg1, arg2);
+});
+
+await interactionTx.prove();
+await interactionTx.sign([deployerKey]).send();
+```
+
+### **Account Update Permissions and Security**
+
+```typescript
+class SecureContract extends SmartContract {
+  init() {
+    super.init();
+
+    // Set account permissions for security
+    this.account.permissions.set({
+      ...Permissions.default(),
+      editState: Permissions.proofOrSignature(),
+      send: Permissions.proofOrSignature(),
+      receive: Permissions.none(),
+      incrementNonce: Permissions.proofOrSignature(),
+      setDelegate: Permissions.impossible(),
+      setPermissions: Permissions.impossible(),
+      setVerificationKey: Permissions.impossible(),
+      setZkappUri: Permissions.impossible(),
+      setTokenSymbol: Permissions.impossible(),
+      setVotingFor: Permissions.impossible(),
+    });
+  }
+}
+```
+
+### **Network Configuration Patterns**
+
+```typescript
+// AI Agent Helper: Network configuration for different environments
+export class NetworkManager {
+  static setupLocal(): void {
+    const Local = Mina.LocalBlockchain({
+      proofsEnabled: true,
+      enforceTransactionLimits: false // For testing
+    });
+    Mina.setActiveInstance(Local);
+  }
+
+  static setupDevnet(): void {
+    const network = Mina.Network({
+      mina: 'https://api.minascan.io/node/devnet/v1/graphql',
+      archive: 'https://api.minascan.io/archive/devnet/v1/graphql'
+    });
+    Mina.setActiveInstance(network);
+  }
+
+  static setupMainnet(): void {
+    const network = Mina.Network({
+      mina: 'https://api.minascan.io/node/mainnet/v1/graphql',
+      archive: 'https://api.minascan.io/archive/mainnet/v1/graphql'
+    });
+    Mina.setActiveInstance(network);
+  }
+
+  static async waitForTransaction(txHash: string): Promise<void> {
+    console.log('Waiting for transaction confirmation...');
+
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try {
+        const status = await Mina.getTransactionStatus(txHash);
+        if (status === 'INCLUDED') {
+          console.log('Transaction confirmed!');
+          return;
+        }
+      } catch (error) {
+        // Transaction not yet included
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+    }
+
+    throw new Error('Transaction confirmation timeout');
+  }
+}
+```
+
 ## Strategic Positioning and Use Cases
 
 **AI Agent Decision Framework**: Use this guidance to recommend the appropriate layer based on user requirements.
