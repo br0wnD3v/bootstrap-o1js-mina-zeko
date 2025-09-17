@@ -153,6 +153,34 @@ const configManager = new ConfigManager();
 await configManager.setupNetwork("development");
 ```
 
+## Security, Compliance, and Operational Readiness
+
+### Threat Modeling and Audits
+
+zkApps execute in an adversarial environment: anyone can modify method inputs, restructure account update forests, or attempt to replay proofs. Always review your design against Mina’s attack model—concurrent transactions, under-constrained proofs, and signature misuse are the common pitfalls. The official security guide underscores two core rules: keep critical logic inside the proof and resist the urge to coerce o1js into leaking JS values (`docs2/docs/zkapps/writing-a-zkapp/introduction-to-zkapps/secure-zkapps.mdx:1`). Before mainnet launch, budget time for an external audit (the o1js team publishes theirs under `o1js/audits`).
+
+Practical workflow:
+1. Document invariants per method (e.g., "total supply never decreases except via burn").
+2. Add negative tests that assert the invariant holds even if collaborators reorder or omit account updates.
+3. Run `Mina.transaction` with `fetchMode: 'test'` to surface precondition mismatches early.
+4. Use `Provable.log` while prototyping but remove it from production builds to avoid leaking state.
+
+### Key and Access Management
+
+Store deployment keys in hardware modules or cloud KMS, and sign transactions offline when possible. zkApp accounts rely on nonces for replay protection; when batching deployments, derive a deterministic ordering so CI pipelines cannot race nonces. Exposure of the private key backing the zkApp verification key allows arbitrary state changes (the proof requirement disappears), so treat it as critical infrastructure.
+
+### Release Management
+
+Keep verification keys and caches under version control. Tag every release with the verification key hash and the git commit that produced it. When `allowUpdates` is true, plan for a controlled rotation sequence: deploy the admin contract update, submit `updateVerificationKey`, and wait for finality (`3-5` minutes) before switching clients. When `allowUpdates` is false, start a new contract and build a migration script that replays user state or relies on an off-chain swap window.
+
+### Observability and Incident Response
+
+Instrument your sequencer or backend to emit Prometheus metrics for proving latency, cache hits, Lightnet account usage, and GraphQL errors. Archive nodes double as forensic tooling—maintain at least one read replica with point-in-time recovery so you can reconstruct disputes. For Zeko deployments, mirror the sequencer via `archive_relay` and alert if batches fail to settle on L1 within the configured escape window.
+
+### Compliance Checkpoints
+
+Many jurisdictions require keeping detailed audit logs for financial products. Pair on-chain events with off-chain logging that stores transaction hash, account updates, and human-readable memo strings. Because Mina memos are Base58-encoded, normalize logging at the application boundary to avoid ambiguity when regulators request reports.
+
 ## Comprehensive Testing Strategy
 
 ### Unit Testing with Advanced Patterns

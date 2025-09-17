@@ -3,6 +3,31 @@
 > **AI Agent Guidance**: This document covers advanced o1js patterns including ZkPrograms and recursion. Use this for complex applications requiring proof composition and blockchain compression. The deprecated lookup table migration section has been removed as it was confusing and unused.
 
 ## ZkPrograms: Advanced Proof Systems
+### Proof-System Building Blocks
+
+Mina’s recursion stack splits into **step circuits** (Kimchi) and a **wrap circuit** (Pickles). Step circuits encode your business logic; the wrap circuit verifies the previous recursive proof and enforces feature flags such as `app_state` length, events, actions, and zkApp URI constraints (`o1js/src/lib/proof-system/zkprogram.ts:1`). Each recursive layer stores its verification key hash inside the proof so the wrap circuit can ensure you are verifying the correct program. Because the wrap circuit itself is fixed, upgrades that change the number of public inputs or proof indices require new verification keys and, if `allowUpdates=false`, a redeploy.
+
+`Proof`s contain three core components: the public input vector, the previous proof commitments, and the deferred values. Deferred values like `plonk.alpha` or `bulletproof_challenges` are rechecked in the wrap circuit to guarantee honesty from the prover. Understanding these internals helps explain error messages such as `Invalid proof: scalar challenge did not match`—they indicate the wrap circuit rejected the deferred values of a recursive call.
+
+### Feature Flags and Recursion Safety
+
+The proof system uses feature flags to prevent incompatible circuits from being composed. Flags cover capabilities such as transaction slots, events, actions, and dynamic proofs. When you enable a feature (for example emitting actions), the compiler toggles the corresponding flag; any recursive proof that omits the flag cannot verify a proof that requires it. This prevents downgrade attacks where an adversary recursively verifies a proof under weaker rules than intended.
+
+You can inspect the active feature set by calling `Proof.getFeatureFlags()` on a generated proof (`o1js/src/lib/proof-system/proof.ts:1`).
+
+### Aggregation Patterns
+
+Designing recursive systems typically follows one of three shapes:
+1. **Linear recursion** (state machine): each proof feeds into the next, carrying over aggregate state such as a running hash or counter.
+2. **Tree recursion** (batching): proofs verify siblings first and then combine via a parent proof, allowing logarithmic depth for large batches.
+3. **Hybrid**: merge pairs in a tree and periodically checkpoint into a linear accumulator.
+
+Tree recursion is ideal for reducing many independent proofs (payments, rollup batches), while linear recursion shines for evolving states like rollup ledgers or sequences of verifiable computations.
+
+### Proof Caching and Key Management
+
+`ZkProgram.compile()` and `SmartContract.compile()` output serialized prover key, verification key, and a cache identifier. Persist them through the `Cache` interface (filesystem or custom) so subsequent runs can read the keys instead of recompiling (`o1js/src/lib/proof-system/cache.ts:1`). As you rotate verification keys, remember that existing on-chain deployments expect the hash recorded during `deploy()`. If `allowUpdates` was set to `false`, you must redeploy a new contract and migrate state manually.
+
 
 **Key Concept for AI Agents**: ZkPrograms enable infinite recursion and proof composition - unique capabilities in blockchain space. Use for scalability and complex verification patterns.
 

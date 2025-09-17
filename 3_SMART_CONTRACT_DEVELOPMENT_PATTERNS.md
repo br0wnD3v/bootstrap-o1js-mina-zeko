@@ -331,6 +331,12 @@ class EventLoggingContract extends SmartContract {
 In traditional blockchains, transactions are ordered first, then executed. But Mina uses execute-order-validate: transactions are executed client-side, generating proofs that are then ordered and validated. This creates a problem where multiple users updating the same state simultaneously will cause all but the first transaction to fail when their preconditions become invalid.
 
 **Comprehensive Actions/Reducers Implementation Guide:**
+**Essential Reading (ZkNoid definitive series):**
+- [Why We Need Actions/Reducers](https://medium.com/zknoid/mina-action-reducers-guide-why-we-need-them-81b6836c1700)
+- [Let’s Take a Closer Look](https://medium.com/zknoid/mina-action-reducers-guide-lets-take-a-closer-look-2c4685715b78)
+- [Writing Our Own Reducers](https://medium.com/zknoid/mina-action-reducers-guide-writing-our-own-reducers-81802287776f)
+- [Batch Reducers](https://medium.com/zknoid/mina-action-reducers-guide-batch-reducers-6a818ecbeb2f)
+
 
 **Why Actions/Reducers Are Essential:**
 
@@ -817,6 +823,22 @@ export class OffchainStorageManager {
 - **Off-chain storage provides native-like state management with conflict detection**
 - **Actions are queued immediately; reducers process them later**
 - **Study ZkNoid's articles for comprehensive implementation patterns**
+
+### AccountUpdate Trees and Authorizations
+
+Every Mina transaction is a forest of account updates. Each update carries an `authorizationKind` that determines how the node validates it: `None`, `Signature`, `Proof`, or `Either`. Updating a child requires the parent to approve it via `this.approve()` or by inheriting permissions. Mina’s validator enforces that balance changes across the forest sum to zero (after accounting for fees), that `useFullCommitment` flags line up with signatures, and that any token-side effects comply with `mayUseToken` rules. The base `TokenContract` limits a single authorization to approving at most nine token-bearing updates; if your design exceeds this, you must batch operations or split them into multiple transactions (`o1js/src/lib/mina/v1/token/token-contract.ts:29`).
+
+When composing complex transactions, keep the call-depth limit in mind: each approval pushes a call stack entry inside the SNARK. Deep trees can exceed proving capacity, so prefer flat forests and reusable approval helpers.
+
+### Preconditions and Failure Modes
+
+Account preconditions (`requireEquals`, `requireBetween`, `requireGreaterThan`) are checked at validation time using ledger values fetched fresh from the node. If another transaction modifies the account before inclusion, your update fails with `Account_precondition_unsatisfied`. Prefer inequality-based guards for mutable fields (balances, action states) and reserve `requireEquals` for values guaranteed to be static (verification keys, token symbols). Network preconditions operate similarly: constraining `this.network.globalSlotSinceGenesis` narrows the inclusion window; constraining `totalCurrency` forces the transaction to land before any supply change.
+
+Reducers also participate in precondition logic. Each `reduce()` call requires the previous `actionState` as input, and Mina retains a window of five commitments—current plus four history values—so zkApps have roughly 15 minutes (depending on slot duration) to produce proofs before commitments roll off. If more than 32 actions accumulate (the current cap in `Reducer.reduce()`), the call throws; design batch reducers that process chunks to avoid this limitation (`docs2/docs/zkapps/writing-a-zkapp/feature-overview/actions-and-reducer.mdx:1`).
+
+### Event and Action Persistence
+
+Events and actions are not stored on the base chain beyond their commitments. To retrieve historical payloads, dApps must query an archive node or maintain their own indexer. Every `emitEvent` or `reducer.dispatch` updates the on-chain commitment, and the archive node stores the emitted payload keyed by block height and account update index. Agents should plan indexing from day one—without it, replaying state transitions or honoring regulatory audits becomes impossible.
 
 ## Token Contracts and Custom Tokens
 

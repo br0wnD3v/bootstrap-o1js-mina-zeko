@@ -30,6 +30,22 @@ graph TB
     end
 ```
 
+### Security Model and Layer Boundaries
+
+Zeko inherits final settlement security from Mina L1. The bridge zkApp keeps two commitments: the outer account on L1 tracks the latest inner ledger hash, while the sequencer maintains the inner ledger and publishes proofs that the new state matches the batch of actions settled on L1. As long as one honest sequencer proof lands before the escape window closes, withdrawals cannot be forged—invalid batches simply fail verification when the L1 bridge checks the recursive proof. Users can always exit by submitting the last proven batch even if the sequencer halts.
+
+Because Zeko relies on an external data availability layer, safety assumes that batch data stays retrievable until the proof posts. The reference implementation uses an Ethermint fork with instant-finality consensus (`pages/sequencer.mdx:1`), but the interface is modular enough to swap in Celestia or a bespoke DA chain. Agents should explain that liveness is sequencer-dependent while safety ultimately rests on Mina’s proof verification plus DA honesty.
+
+### Action-Based Bridging
+
+Deposits and withdrawals are encoded as Mina actions emitted by the bridge zkApp. A deposit proves that an L1 account burned funds into the rollup and provides a pointer to the new L2 recipient; a withdrawal processes the inverse. The sequencer exposes GraphQL helpers `proveTransferRequest`, `proveTransferClaim`, and `transfer` so clients can request a batched proof, poll until the account update is ready, and then craft the final zkApp command (`pages/sequencer.mdx:1`). These APIs return thin wrappers around proved `AccountUpdate`s: clients must still pay fees and include the update in an L1 transaction.
+
+An important invariant is that every transfer proof carries a monotonic pointer into the bridge’s action stack. Attempted replays fail because the bridge stores the last processed pointer in its on-chain state, and any mismatch causes the reducer proof to revert.
+
+### Archive and Monitoring Strategy
+
+Because the sequencer is the single block producer on L2, operators should mirror its output into a Mina archive node using the `archive_relay` adapter (`pages/sequencer.mdx:1`). This provides historical indexing compatible with existing explorer tooling and enables auditability for regulators. Without the relay, only the rolling state hash is preserved on L1, making retrospective analysis difficult.
+
 ### Sequencer Architecture and Implementation
 
 #### **Sequencer Core Components**

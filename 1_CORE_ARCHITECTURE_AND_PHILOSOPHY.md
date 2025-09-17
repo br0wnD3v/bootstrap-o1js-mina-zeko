@@ -94,6 +94,36 @@ graph TD
 - **Devnet/Berkeley**: Testing network with test MINA tokens
 - **Local Blockchain**: Development environment for testing
 
+### Protocol State Anatomy
+
+A Mina block bundles the entire protocol state and a proof of its validity. Each transition carries a previous-state hash and a body containing the blockchain state, consensus state, and consensus constants. The blockchain state commits to the staged ledger hash, genesis ledger hash, ledger proof statement, and timestamp, while the consensus state tracks global slot, epoch data, total currency, and ancestor density metrics (`docs2/docs/mina-protocol/whats-in-a-block.mdx:1`). Because the protocol state hash chains these fields, any tampering breaks the recursive proof supplied with the block.
+
+**Key protocol state fields to keep in mind:**
+- *Staged ledger hash* combines the pending ledger, scan state, and pending coinbase stack to describe the next ledger snapshot.
+- *Ledger proof statement* encapsulates the snarked ledger hash, fee excess, pending coinbase stack, and local state commitment used by the proof system to attest to all included transactions.
+- *Consensus constants* such as `k`, `delta`, `slots_per_window`, and `slot_duration_ms` govern finality depth and the admissible network delay window.
+
+### Scan State, SNARK Workers, and Throughput
+
+Mina decouples transaction execution from proof generation by maintaining a scan state: a forest of full binary trees whose leaves are base jobs and whose internal nodes are merge jobs (`docs2/docs/mina-protocol/scan-state.mdx:1`). Block producers add transactions to the scan state and must include an equivalent amount of completed proofs, which can be purchased from the snarketplace. This design guarantees a single ledger proof emerges per block while allowing transaction throughput to scale logarithmically with available SNARK work rather than block time. Important constants include:
+- `transaction_capacity_log_2`: sets the theoretical upper bound on transactions per block (`2^{log_2}` slots).
+- `work_delay`: enforces a minimum number of blocks before referencing newly enqueued jobs, giving SNARK workers time to respond.
+- `max_number_of_trees` / `max_number_of_proofs`: derived values that bound concurrent SNARK jobs and guarantee only one ledger proof is emitted per block.
+
+In steady state the scan state emits one proof per block; when proof supply lags, block producers fall back to lower transaction counts until the forest catches up, preserving determinism.
+
+### Consensus Mechanics in Practice
+
+Mina implements a succinct adaptation of Ouroboros Praos. Validators sample slots using a VRF threshold that is proportional to stake recorded in the epoch ledger. Instead of materializing historical ledgers, Mina nodes snapshot only the account records and Merkle paths needed for their own keys; the SNARK proves that the VRF output is beneath the correct stake-weighted threshold (`docs2/docs/mina-protocol/proof-of-stake.mdx:1`). Finality parameters (`delta`, `k`) guarantee that adversaries cannot extend forks beyond the checkpoint window before proofs reveal the inconsistency.
+
+Slot winners must also satisfy the delta transition chain proof (ensuring the block was produced inside the allowed network latency window) and include SNARK work matching the staged ledger diff, so honest block producers cannot be starved by withholding proofs.
+
+### Account Model, Preconditions, and Action History
+
+Every Mina account update carries explicit preconditions over account state, network state, and global slots. These preconditions are enforced during validation—not while the prover constructs the transaction—so any zkApp that fetches state with `getAndRequireEquals()` is effectively pinning its proof to that specific ledger snapshot. Use inequality checks (`requireBetween`, `requireGreaterThan`) when collaborating with other updates in the same block to avoid unnecessary replays.
+
+Mina stores an `events` commitment and an `actionState` commitment per account. The action state maintains the last five commitments (current plus four historical values) so zkApps can safely process concurrent actions dispatched across multiple transactions, forming the foundation of the reducer patterns highlighted later. Archive nodes expose the full action history while the base ledger retains only the rolling commitments.
+
 ## o1js Framework: The Core Development Layer
 
 ### Framework Architecture and Philosophy

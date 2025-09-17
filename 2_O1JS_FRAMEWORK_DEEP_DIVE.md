@@ -216,6 +216,28 @@ for (let i = 0; i < dynamicArray.maxLength; i++) {
 ```
 
 ## The Witness Pattern: Advanced Programming Technique
+**How constraints get generated under the hood:** o1js executes your TypeScript twice whenever you call `SmartContract.compile()` or `ZkProgram.compile()`. The first pass runs in "compile" mode, recording every provable operation into an AST that the bindings turn into Kimchi gates. The second pass runs in "prove" mode, reusing the frozen circuit and hooking real witness values into each gate. The compiler reports constraint and key metadata as part of its return value, so any branch that fails to execute during the compile pass never becomes part of the circuit.
+
+### Method Metadata and Caching
+
+`SmartContract.compile()` analyzes every `@method` and caches both the prover key and verification key to disk. Subsequent runs reuse cached keys when the circuit hash matches, saving minutes of recompilation. You can introspect a method's static footprint by calling `SmartContract.analyzeMethods()` or `ZkProgram.analyzeMethods()` which returns rows, number of gates, public input size, and whether the method relies on lookups or recursive proofs (`o1js/src/lib/proof-system/zkprogram.ts:1`). In CI, keeping the cache folder warm dramatically improves `npm run build` times and ensures verification keys are consistent across developers.
+
+### Provable, FlexibleProvable, and Core Namespace
+
+The `Provable` namespace defines canonical encodings between TypeScript objects and field elements. Higher-level wrappers like `Struct`, `CircuitString`, `Provable.Array`, and `DynamicArray` build on it, while `FlexibleProvablePure` lets you admit optional serialization strategies (for example the reducer API accepts any `FlexibleProvablePure` action type). For low-level work, the new `Core` namespace exposes raw field and curve operations, transaction layouts, and protocol constants without the syntactic sugar; it maps almost one-to-one to the underlying OCaml bindings (`o1js/src/index.ts:106`).
+
+### Witness and As-Prover Discipline
+
+`Provable.witness()` spawns a temporary region where you can compute complex values in JavaScript yet still enforce consistency by asserting relationships afterward. `Provable.asProver()` does *not* add constraints; it is intended for logging, debugging, or deriving auxiliary data (for example writing to off-chain storage). Any logic that must hold on-chain must happen outside the `asProver` block. This distinction is the root of common under-constrained proof bugs—see the security discussion in `docs2/docs/zkapps/writing-a-zkapp/introduction-to-zkapps/secure-zkapps.mdx:1`.
+
+### Runtime Tables, Lookups, and Foreign Fields
+
+Kimchi supports lookup tables and foreign-field arithmetic, which o1js surfaces through `Experimental` gadgets. `RuntimeTable` lets you inject lookup tables at prove time, for example when you need dynamic range tables for Plonk lookups. Foreign field helpers (`ForeignField.*`, `Gadgets.ForeignField.*`) allow implementing BN254 or secp256k1 arithmetic by decomposing values into base-field limbs (`o1js/src/lib/provable/foreign-field.ts:1`). These tools trade constraint count for flexibility but must be wired carefully—lookups and foreign-field operations balloon proving time if overused.
+
+### Proof-System Resource Metrics
+
+Every provable method has three main cost drivers: number of rows (Kimchi gates), number of lookups, and number of public inputs. `analyzeMethods()` and the debugging hooks in `Circuit.logConstraintCount()` surface these metrics so teams can monitor regression budgets. In production, aim to keep single-method row counts under ~200k for reasonable proving latency on commodity hardware; beyond that, consider splitting logic into multiple methods or using recursion to aggregate proofs.
+
 
 **Critical AI Agent Knowledge**: The witness pattern is essential for efficient circuit design. Use this to explain performance optimization and debugging constraint issues.
 
