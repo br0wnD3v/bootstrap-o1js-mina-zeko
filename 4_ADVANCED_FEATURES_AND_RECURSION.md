@@ -9,7 +9,7 @@
 ### Basic ZkProgram Structure
 
 ```typescript
-import { ZkProgram, Field, Struct, SelfProof, verify } from 'o1js';
+import { ZkProgram, Field, Struct, SelfProof, verify } from "o1js";
 
 // Define input/output types
 class ProgramInput extends Struct({
@@ -24,7 +24,7 @@ class ProgramOutput extends Struct({
 
 // Create ZkProgram
 const MathProgram = ZkProgram({
-  name: 'math-program',
+  name: "math-program",
   publicInput: ProgramInput,
   publicOutput: ProgramOutput,
 
@@ -77,11 +77,17 @@ const baseInput = new ProgramInput({ value: Field(5), multiplier: Field(2) });
 const baseProof = await MathProgram.baseCase(baseInput);
 
 // Generate recursive proof
-const recursiveInput = new ProgramInput({ value: Field(3), multiplier: Field(4) });
-const recursiveProof = await MathProgram.recursiveStep(recursiveInput, baseProof);
+const recursiveInput = new ProgramInput({
+  value: Field(3),
+  multiplier: Field(4),
+});
+const recursiveProof = await MathProgram.recursiveStep(
+  recursiveInput,
+  baseProof
+);
 
-console.log('Final result:', recursiveProof.publicOutput.result.toString());
-console.log('Steps taken:', recursiveProof.publicOutput.stepCount.toString());
+console.log("Final result:", recursiveProof.publicOutput.result.toString());
+console.log("Steps taken:", recursiveProof.publicOutput.stepCount.toString());
 ```
 
 ### Advanced Recursion Patterns
@@ -97,7 +103,7 @@ class CounterState extends Struct({
 }) {}
 
 const CounterProgram = ZkProgram({
-  name: 'counter-state-machine',
+  name: "counter-state-machine",
   publicInput: Field, // New value to add
   publicOutput: CounterState,
 
@@ -105,10 +111,7 @@ const CounterProgram = ZkProgram({
     // Initialize counter
     init: {
       privateInputs: [Field], // maxValue
-      async method(
-        increment: Field,
-        maxValue: Field
-      ): Promise<CounterState> {
+      async method(increment: Field, maxValue: Field): Promise<CounterState> {
         // Validate initial increment
         increment.assertGreaterThan(Field(0));
         increment.assertLessThanOrEqual(maxValue);
@@ -139,7 +142,11 @@ const CounterProgram = ZkProgram({
 
         // Check if we exceed maximum
         const exceedsMax = newValue.greaterThan(prevState.maxValue);
-        const finalValue = Provable.if(exceedsMax, prevState.maxValue, newValue);
+        const finalValue = Provable.if(
+          exceedsMax,
+          prevState.maxValue,
+          newValue
+        );
         const stillActive = exceedsMax.not();
 
         return new CounterState({
@@ -183,7 +190,7 @@ class ComputationNode extends Struct({
 }) {}
 
 const TreeProgram = ZkProgram({
-  name: 'tree-computation',
+  name: "tree-computation",
   publicInput: Field, // Input value
   publicOutput: ComputationNode,
 
@@ -247,7 +254,7 @@ async function buildTreeComputation(values: Field[]): Promise<any> {
 
   // Create leaf proofs
   const leafProofs = await Promise.all(
-    values.map(value => TreeProgram.leaf(value))
+    values.map((value) => TreeProgram.leaf(value))
   );
 
   // Recursively merge pairs until we have one root
@@ -304,7 +311,7 @@ class BatchProof extends Struct({
 }) {}
 
 const RollupProgram = ZkProgram({
-  name: 'transaction-rollup',
+  name: "transaction-rollup",
   publicInput: RollupState, // Previous state
   publicOutput: RollupState, // New state
 
@@ -359,7 +366,11 @@ const RollupProgram = ZkProgram({
         const intermediateState = prevProof.publicOutput;
 
         // Apply transaction to intermediate state
-        return this.processTransaction(intermediateState, transaction, stateWitness);
+        return this.processTransaction(
+          intermediateState,
+          transaction,
+          stateWitness
+        );
       },
     },
   },
@@ -386,7 +397,7 @@ class ChainState extends Struct({
 }) {}
 
 const CrossChainProgram = ZkProgram({
-  name: 'cross-chain-messaging',
+  name: "cross-chain-messaging",
   publicInput: ChainMessage,
   publicOutput: ChainState,
 
@@ -394,10 +405,7 @@ const CrossChainProgram = ZkProgram({
     // Initialize chain state
     initChain: {
       privateInputs: [Field], // Chain ID
-      async method(
-        message: ChainMessage,
-        chainId: Field
-      ): Promise<ChainState> {
+      async method(message: ChainMessage, chainId: Field): Promise<ChainState> {
         return new ChainState({
           chainId,
           latestHeight: UInt64.zero,
@@ -496,7 +504,7 @@ class VerificationInput extends Struct({
 }) {}
 
 const UniversalVerifier = ZkProgram({
-  name: 'universal-verifier',
+  name: "universal-verifier",
   publicInput: VerificationInput,
   publicOutput: Bool, // Verification result
 
@@ -557,7 +565,9 @@ class ProgramRegistry extends SmartContract {
   ) {
     const admin = this.getAdmin();
 
-    adminSignature.verify(admin, [newVersion, newImplementationHash]).assertTrue();
+    adminSignature
+      .verify(admin, [newVersion, newImplementationHash])
+      .assertTrue();
 
     this.currentVersion.set(newVersion);
     this.implementationHash.set(newImplementationHash);
@@ -600,7 +610,7 @@ class FibMatrix extends Struct({
 }) {}
 
 const FibonacciProgram = ZkProgram({
-  name: 'fibonacci-optimized',
+  name: "fibonacci-optimized",
   publicInput: Field, // n (which Fibonacci number to compute)
   publicOutput: Field, // F(n)
 
@@ -716,7 +726,7 @@ class GameAction extends Struct({
 }) {}
 
 const GameProgram = ZkProgram({
-  name: 'game-state-machine',
+  name: "game-state-machine",
   publicInput: GameAction,
   publicOutput: GameStateData,
 
@@ -724,10 +734,7 @@ const GameProgram = ZkProgram({
     // Initialize new game
     initGame: {
       privateInputs: [Field], // Game ID
-      async method(
-        action: GameAction,
-        gameId: Field
-      ): Promise<GameStateData> {
+      async method(action: GameAction, gameId: Field): Promise<GameStateData> {
         // Validate initialization action
         action.actionType.assertEquals(Field(1)); // Start action
 
@@ -795,27 +802,35 @@ function validateAndApplyAction(
   const actionType = action.actionType;
 
   // Start game transition
-  const canStart = currentStateField.equals(Field(GameState.WAITING))
+  const canStart = currentStateField
+    .equals(Field(GameState.WAITING))
     .and(actionType.equals(Field(1)));
 
   // Make move transition
-  const canMove = currentStateField.equals(Field(GameState.PLAYING))
+  const canMove = currentStateField
+    .equals(Field(GameState.PLAYING))
     .and(actionType.equals(Field(2)))
     .and(action.player.equals(currentState.currentPlayer));
 
   // Pause transition
-  const canPause = currentStateField.equals(Field(GameState.PLAYING))
+  const canPause = currentStateField
+    .equals(Field(GameState.PLAYING))
     .and(actionType.equals(Field(3)));
 
   // Resume transition
-  const canResume = currentStateField.equals(Field(GameState.PAUSED))
+  const canResume = currentStateField
+    .equals(Field(GameState.PAUSED))
     .and(actionType.equals(Field(4)));
 
   // End game transition
   const canEnd = actionType.equals(Field(5));
 
   // Validate at least one transition is valid
-  const isValidTransition = canStart.or(canMove).or(canPause).or(canResume).or(canEnd);
+  const isValidTransition = canStart
+    .or(canMove)
+    .or(canPause)
+    .or(canResume)
+    .or(canEnd);
   isValidTransition.assertTrue();
 
   // Apply state changes based on action
@@ -900,6 +915,7 @@ function mergeGameStates(
 **RuntimeTable** is a new class introduced in o1js 2.9.0 that provides an improved API for working with lookup tables. It replaces the deprecated `Gates.addRuntimeTableConfig` and `Gadgets.inTable` functions with better readability and ergonomics.
 
 **Key Improvements:**
+
 - **Better readability**: More intuitive API design
 - **Type safety**: Improved TypeScript support
 - **Cleaner code**: Eliminates boilerplate from old API
@@ -907,7 +923,7 @@ function mergeGameStates(
 ### Basic RuntimeTable Usage
 
 ```typescript
-import { RuntimeTable, Field } from 'o1js';
+import { RuntimeTable, Field } from "o1js";
 
 // Create a runtime table with predefined indices
 const lookupTable = new RuntimeTable(5, [10n, 20n, 30n, 40n, 50n]);
@@ -938,22 +954,22 @@ function verifySquareLookup(index: bigint, expectedValue: Field) {
 ### Complex RuntimeTable Example
 
 ```typescript
-import { RuntimeTable, Field, SmartContract, method } from 'o1js';
+import { RuntimeTable, Field, SmartContract, method } from "o1js";
 
 // Runtime table for precomputed hash values
 const hashTable = new RuntimeTable(10, [0n, 1n, 2n, 3n, 4n, 5n]);
 
 // Populate with precomputed hashes
 hashTable.insert([
-  [0n, Field('12345678901234567890')], // hash(0)
-  [1n, Field('98765432109876543210')], // hash(1)
-  [2n, Field('11111111111111111111')], // hash(2)
+  [0n, Field("12345678901234567890")], // hash(0)
+  [1n, Field("98765432109876543210")], // hash(1)
+  [2n, Field("11111111111111111111")], // hash(2)
 ]);
 
 hashTable.insert([
-  [3n, Field('22222222222222222222')], // hash(3)
-  [4n, Field('33333333333333333333')], // hash(4)
-  [5n, Field('44444444444444444444')], // hash(5)
+  [3n, Field("22222222222222222222")], // hash(3)
+  [4n, Field("33333333333333333333")], // hash(4)
+  [5n, Field("44444444444444444444")], // hash(5)
 ]);
 
 // Use in smart contract
@@ -974,9 +990,12 @@ class OptimizedContract extends SmartContract {
   }
 
   @method async batchVerifyHashes(
-    input1: Field, hash1: Field,
-    input2: Field, hash2: Field,
-    input3: Field, hash3: Field
+    input1: Field,
+    hash1: Field,
+    input2: Field,
+    hash2: Field,
+    input3: Field,
+    hash3: Field
   ) {
     // Multiple lookups get batched automatically
     hashTable.lookup(0n, hash1);
@@ -990,7 +1009,6 @@ class OptimizedContract extends SmartContract {
 }
 ```
 
-
 ### Performance Benefits
 
 ```typescript
@@ -1000,7 +1018,8 @@ const fibonacciTable = new RuntimeTable(20, fibIndices);
 
 // Precompute Fibonacci numbers
 const fibPairs: [bigint, Field][] = [];
-let a = 0, b = 1;
+let a = 0,
+  b = 1;
 for (let i = 0; i < 20; i++) {
   fibPairs.push([BigInt(i), Field(a)]);
   [a, b] = [b, a + b];
@@ -1075,9 +1094,12 @@ function verifyOperation(
 
 // Pattern 3: Batch optimization
 function batchVerifySquares(
-  a: bigint, squareA: Field,
-  b: bigint, squareB: Field,
-  c: bigint, squareC: Field
+  a: bigint,
+  squareA: Field,
+  b: bigint,
+  squareB: Field,
+  c: bigint,
+  squareC: Field
 ): void {
   // These three lookups will be automatically batched into one gate
   multiplicationTable.lookup(a, squareA);
@@ -1111,8 +1133,10 @@ function populateHashTable(hashPairs: [bigint, Field][]): void {
 
 // 4. Always call check() after lookup sequences
 function verifyHashChain(
-  input1: bigint, hash1: Field,
-  input2: bigint, hash2: Field
+  input1: bigint,
+  hash1: Field,
+  input2: bigint,
+  hash2: Field
 ): void {
   hashTable.lookup(input1, hash1);
   hashTable.lookup(input2, hash2);
@@ -1124,7 +1148,7 @@ function verifyHashChain(
 // 5. Handle table size limits (max 2^16 entries)
 function createOptimalTable(data: [bigint, Field][]): RuntimeTable {
   if (data.length > 65536) {
-    throw new Error('RuntimeTable size limit exceeded');
+    throw new Error("RuntimeTable size limit exceeded");
   }
 
   const indices = data.map(([index]) => index);

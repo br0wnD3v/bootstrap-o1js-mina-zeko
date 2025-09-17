@@ -52,7 +52,7 @@ interface SequencerConfig {
   settlementFrequency: number;
 
   // DA layer settings
-  daProvider: 'ethermint' | 'celestia' | 'custom';
+  daProvider: "ethermint" | "celestia" | "custom";
   daConfig: Record<string, any>;
 }
 
@@ -69,7 +69,10 @@ class ZekoSequencer {
     this.transactionPool = new TransactionPool(config.batchSize);
     this.stateManager = new StateManager();
     this.proofGenerator = new ProofGenerator();
-    this.daClient = new DataAvailabilityClient(config.daProvider, config.daConfig);
+    this.daClient = new DataAvailabilityClient(
+      config.daProvider,
+      config.daConfig
+    );
     this.bridgeClient = new BridgeClient(config.bridgeContract);
   }
 
@@ -103,11 +106,13 @@ class ZekoSequencer {
           const stateUpdate = await this.stateManager.applyTransaction(tx);
 
           // Generate proof
-          const proof = await this.proofGenerator.generateTransactionProof(tx, stateUpdate);
+          const proof = await this.proofGenerator.generateTransactionProof(
+            tx,
+            stateUpdate
+          );
 
           // Mark as processed
           this.transactionPool.confirmTransaction(tx.hash, proof);
-
         } catch (error) {
           console.error(`Transaction processing failed: ${error}`);
           this.transactionPool.rejectTransaction(tx.hash);
@@ -118,7 +123,9 @@ class ZekoSequencer {
 
   private async startBatchProduction(): Promise<void> {
     setInterval(async () => {
-      const readyTxs = this.transactionPool.getReadyTransactions(this.config.batchSize);
+      const readyTxs = this.transactionPool.getReadyTransactions(
+        this.config.batchSize
+      );
 
       if (readyTxs.length > 0) {
         await this.produceBatch(readyTxs);
@@ -128,7 +135,9 @@ class ZekoSequencer {
 
   private async produceBatch(transactions: Transaction[]): Promise<void> {
     // Create batch proof
-    const batchProof = await this.proofGenerator.generateBatchProof(transactions);
+    const batchProof = await this.proofGenerator.generateBatchProof(
+      transactions
+    );
 
     // Publish to DA layer
     const daCommitment = await this.daClient.publishBatch({
@@ -189,7 +198,7 @@ class TransactionPool {
 
     // Check for duplicates
     if (this.pendingTxs.has(txHash) || this.confirmedTxs.has(txHash)) {
-      throw new Error('Duplicate transaction');
+      throw new Error("Duplicate transaction");
     }
 
     // Check pool capacity
@@ -202,7 +211,7 @@ class TransactionPool {
       transaction: tx,
       hash: txHash,
       receivedAt: Date.now(),
-      status: 'pending',
+      status: "pending",
     };
 
     this.pendingTxs.set(txHash, pendingTx);
@@ -211,9 +220,9 @@ class TransactionPool {
 
   async getPendingTransactions(): Promise<Transaction[]> {
     return Array.from(this.pendingTxs.values())
-      .filter(tx => tx.status === 'pending')
+      .filter((tx) => tx.status === "pending")
       .sort((a, b) => b.transaction.fee.sub(a.transaction.fee).toNumber()) // Sort by fee
-      .map(tx => tx.transaction);
+      .map((tx) => tx.transaction);
   }
 
   confirmTransaction(txHash: string, proof: any): void {
@@ -222,7 +231,7 @@ class TransactionPool {
 
     const confirmedTx: ConfirmedTransaction = {
       ...pendingTx,
-      status: 'confirmed',
+      status: "confirmed",
       proof,
       confirmedAt: Date.now(),
     };
@@ -237,9 +246,9 @@ class TransactionPool {
 
   getReadyTransactions(batchSize: number): Transaction[] {
     return Array.from(this.confirmedTxs.values())
-      .filter(tx => tx.status === 'confirmed')
+      .filter((tx) => tx.status === "confirmed")
       .slice(0, batchSize)
-      .map(tx => tx.transaction);
+      .map((tx) => tx.transaction);
   }
 
   private computeTransactionHash(tx: Transaction): string {
@@ -253,8 +262,9 @@ class TransactionPool {
   }
 
   private evictLowFeeTxs(): void {
-    const sortedTxs = Array.from(this.pendingTxs.entries())
-      .sort(([, a], [, b]) => a.transaction.fee.sub(b.transaction.fee).toNumber());
+    const sortedTxs = Array.from(this.pendingTxs.entries()).sort(
+      ([, a], [, b]) => a.transaction.fee.sub(b.transaction.fee).toNumber()
+    );
 
     // Remove lowest 10% of transactions
     const toRemove = Math.floor(sortedTxs.length * 0.1);
@@ -268,11 +278,11 @@ interface PendingTransaction {
   transaction: Transaction;
   hash: string;
   receivedAt: number;
-  status: 'pending' | 'processing';
+  status: "pending" | "processing";
 }
 
 interface ConfirmedTransaction extends PendingTransaction {
-  status: 'confirmed';
+  status: "confirmed";
   proof: any;
   confirmedAt: number;
 }
@@ -324,10 +334,13 @@ class EthermintDAProvider implements DataAvailabilityProvider {
     }
   }
 
-  private async createEthermintTransaction(data: any, dataHash: string): Promise<any> {
+  private async createEthermintTransaction(
+    data: any,
+    dataHash: string
+  ): Promise<any> {
     // Create Ethermint transaction with data
     return {
-      type: 'data_availability',
+      type: "data_availability",
       data: JSON.stringify(data),
       hash: dataHash,
       timestamp: Date.now(),
@@ -337,8 +350,8 @@ class EthermintDAProvider implements DataAvailabilityProvider {
   private async submitTransaction(tx: any): Promise<any> {
     // Submit to Ethermint network
     const response = await fetch(`${this.endpoint}/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(tx),
     });
 
@@ -373,8 +386,8 @@ class CelestiaDAProvider implements DataAvailabilityProvider {
     const blob = this.encodeAsBlob(data);
 
     const result = await fetch(`${this.nodeEndpoint}/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         namespace: this.namespace,
         data: blob,
@@ -393,7 +406,9 @@ class CelestiaDAProvider implements DataAvailabilityProvider {
 
   async verifyAvailability(commitment: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.nodeEndpoint}/availability/${commitment}`);
+      const response = await fetch(
+        `${this.nodeEndpoint}/availability/${commitment}`
+      );
       const result = await response.json();
       return result.available;
     } catch {
@@ -402,11 +417,11 @@ class CelestiaDAProvider implements DataAvailabilityProvider {
   }
 
   private encodeAsBlob(data: any): string {
-    return Buffer.from(JSON.stringify(data)).toString('base64');
+    return Buffer.from(JSON.stringify(data)).toString("base64");
   }
 
   private decodeBlob(blob: string): any {
-    return JSON.parse(Buffer.from(blob, 'base64').toString());
+    return JSON.parse(Buffer.from(blob, "base64").toString());
   }
 }
 
@@ -416,11 +431,17 @@ class DataAvailabilityClient {
 
   constructor(providerType: string, config: any) {
     switch (providerType) {
-      case 'ethermint':
-        this.provider = new EthermintDAProvider(config.endpoint, config.privateKey);
+      case "ethermint":
+        this.provider = new EthermintDAProvider(
+          config.endpoint,
+          config.privateKey
+        );
         break;
-      case 'celestia':
-        this.provider = new CelestiaDAProvider(config.nodeEndpoint, config.namespace);
+      case "celestia":
+        this.provider = new CelestiaDAProvider(
+          config.nodeEndpoint,
+          config.namespace
+        );
         break;
       default:
         throw new Error(`Unsupported DA provider: ${providerType}`);
@@ -469,18 +490,18 @@ class ZekoL1Bridge extends SmartContract {
   @state(Field) sequencerStake = State<Field>();
 
   events = {
-    'L2StateUpdate': Provable.Struct({
+    L2StateUpdate: Provable.Struct({
       oldCommitment: Field,
       newCommitment: Field,
       blockHeight: UInt64,
       batchHash: Field,
     }),
-    'WithdrawalInitiated': Provable.Struct({
+    WithdrawalInitiated: Provable.Struct({
       user: PublicKey,
       amount: UInt64,
       l2TxHash: Field,
     }),
-    'WithdrawalCompleted': Provable.Struct({
+    WithdrawalCompleted: Provable.Struct({
       user: PublicKey,
       amount: UInt64,
       withdrawalId: Field,
@@ -495,7 +516,9 @@ class ZekoL1Bridge extends SmartContract {
   ) {
     // Verify sequencer authorization
     const authorizedSequencer = this.authorizedSequencer.getAndRequireEquals();
-    sequencerSignature.verify(authorizedSequencer, [newCommitment, newBlockHeight.value]).assertTrue();
+    sequencerSignature
+      .verify(authorizedSequencer, [newCommitment, newBlockHeight.value])
+      .assertTrue();
 
     // Verify batch proof
     const isValidBatch = this.verifyBatchProof(batchProof, newCommitment);
@@ -513,7 +536,7 @@ class ZekoL1Bridge extends SmartContract {
     this.l2BlockHeight.set(newBlockHeight);
 
     // Emit event
-    this.emitEvent('L2StateUpdate', {
+    this.emitEvent("L2StateUpdate", {
       oldCommitment,
       newCommitment,
       blockHeight: newBlockHeight,
@@ -534,17 +557,24 @@ class ZekoL1Bridge extends SmartContract {
 
     // Verify withdrawal is valid in L2 state
     const currentL2State = this.l2StateCommitment.getAndRequireEquals();
-    const withdrawalHash = Poseidon.hash([...user.toFields(), amount.value, l2TxHash]);
+    const withdrawalHash = Poseidon.hash([
+      ...user.toFields(),
+      amount.value,
+      l2TxHash,
+    ]);
     const calculatedRoot = l2StateWitness.calculateRoot(withdrawalHash);
     calculatedRoot.assertEquals(currentL2State);
 
     // Add to withdrawal queue (simplified - would use merkle tree)
     const currentWithdrawalRoot = this.withdrawalRoot.getAndRequireEquals();
-    const newWithdrawalRoot = Poseidon.hash([currentWithdrawalRoot, withdrawalHash]);
+    const newWithdrawalRoot = Poseidon.hash([
+      currentWithdrawalRoot,
+      withdrawalHash,
+    ]);
     this.withdrawalRoot.set(newWithdrawalRoot);
 
     // Emit event
-    this.emitEvent('WithdrawalInitiated', {
+    this.emitEvent("WithdrawalInitiated", {
       user,
       amount,
       l2TxHash,
@@ -560,7 +590,11 @@ class ZekoL1Bridge extends SmartContract {
 
     // Verify withdrawal exists and hasn't been processed
     const withdrawalRoot = this.withdrawalRoot.getAndRequireEquals();
-    const withdrawalHash = Poseidon.hash([...user.toFields(), amount.value, withdrawalId]);
+    const withdrawalHash = Poseidon.hash([
+      ...user.toFields(),
+      amount.value,
+      withdrawalId,
+    ]);
     const calculatedRoot = withdrawalProof.calculateRoot(withdrawalHash);
     calculatedRoot.assertEquals(withdrawalRoot);
 
@@ -573,7 +607,7 @@ class ZekoL1Bridge extends SmartContract {
     this.withdrawalRoot.set(newRoot);
 
     // Emit event
-    this.emitEvent('WithdrawalCompleted', {
+    this.emitEvent("WithdrawalCompleted", {
       user,
       amount,
       withdrawalId,
@@ -601,13 +635,25 @@ class BridgeClient {
     // Initialize connection to L1
   }
 
-  async settleBatch(batchProof: any, l2StateCommitment: Field, blockHeight: UInt64): Promise<void> {
+  async settleBatch(
+    batchProof: any,
+    l2StateCommitment: Field,
+    blockHeight: UInt64
+  ): Promise<void> {
     // Create signature for batch settlement
-    const signature = Signature.create(this.sequencerKey, [l2StateCommitment, blockHeight.value]);
+    const signature = Signature.create(this.sequencerKey, [
+      l2StateCommitment,
+      blockHeight.value,
+    ]);
 
     // Submit to L1
     const tx = await Mina.transaction(this.sequencerKey, () => {
-      this.l1Contract.updateL2State(l2StateCommitment, blockHeight, batchProof, signature);
+      this.l1Contract.updateL2State(
+        l2StateCommitment,
+        blockHeight,
+        batchProof,
+        signature
+      );
     });
 
     await tx.prove();
@@ -624,11 +670,13 @@ class BridgeClient {
     }
   }
 
-  private async processWithdrawal(withdrawal: WithdrawalRequest): Promise<void> {
+  private async processWithdrawal(
+    withdrawal: WithdrawalRequest
+  ): Promise<void> {
     // Validate withdrawal on L2
     const isValid = await this.validateL2Withdrawal(withdrawal);
     if (!isValid) {
-      throw new Error('Invalid withdrawal request');
+      throw new Error("Invalid withdrawal request");
     }
 
     // Submit withdrawal initiation to L1
@@ -645,7 +693,9 @@ class BridgeClient {
     await tx.send();
   }
 
-  private async validateL2Withdrawal(withdrawal: WithdrawalRequest): Promise<boolean> {
+  private async validateL2Withdrawal(
+    withdrawal: WithdrawalRequest
+  ): Promise<boolean> {
     // Validate that withdrawal exists in L2 state
     // This would involve checking the L2 state tree
     return true; // Simplified
@@ -677,38 +727,38 @@ interface NetworkConfig {
 }
 
 const NETWORK_CONFIGS: Record<string, NetworkConfig> = {
-  'mina:mainnet': {
-    networkId: 'mina:mainnet',
-    name: 'Mina Mainnet',
-    rpcEndpoint: 'https://api.minascan.io/node/mainnet/v1/graphql',
-    explorerUrl: 'https://minascan.io',
+  "mina:mainnet": {
+    networkId: "mina:mainnet",
+    name: "Mina Mainnet",
+    rpcEndpoint: "https://api.minascan.io/node/mainnet/v1/graphql",
+    explorerUrl: "https://minascan.io",
   },
-  'mina:devnet': {
-    networkId: 'mina:devnet',
-    name: 'Mina Devnet',
-    rpcEndpoint: 'https://api.minascan.io/node/devnet/v1/graphql',
-    explorerUrl: 'https://devnet.minascan.io',
-    faucetUrl: 'https://faucet.minaprotocol.com',
+  "mina:devnet": {
+    networkId: "mina:devnet",
+    name: "Mina Devnet",
+    rpcEndpoint: "https://api.minascan.io/node/devnet/v1/graphql",
+    explorerUrl: "https://devnet.minascan.io",
+    faucetUrl: "https://faucet.minaprotocol.com",
   },
-  'zeko:devnet': {
-    networkId: 'zeko:devnet',
-    name: 'Zeko Devnet',
-    rpcEndpoint: 'https://devnet.zeko.io/graphql',
-    archiveEndpoint: 'https://devnet.zeko.io/graphql',
-    explorerUrl: 'https://devnet.zeko.io/explorer',
-    faucetUrl: 'https://zeko.io/faucet',
+  "zeko:devnet": {
+    networkId: "zeko:devnet",
+    name: "Zeko Devnet",
+    rpcEndpoint: "https://devnet.zeko.io/graphql",
+    archiveEndpoint: "https://devnet.zeko.io/graphql",
+    explorerUrl: "https://devnet.zeko.io/explorer",
+    faucetUrl: "https://zeko.io/faucet",
   },
-  'zeko:mainnet': {
-    networkId: 'zeko:mainnet',
-    name: 'Zeko Mainnet',
-    rpcEndpoint: 'https://mainnet.zeko.io/graphql',
-    archiveEndpoint: 'https://mainnet.zeko.io/graphql',
-    explorerUrl: 'https://zeko.io/explorer',
+  "zeko:mainnet": {
+    networkId: "zeko:mainnet",
+    name: "Zeko Mainnet",
+    rpcEndpoint: "https://mainnet.zeko.io/graphql",
+    archiveEndpoint: "https://mainnet.zeko.io/graphql",
+    explorerUrl: "https://zeko.io/explorer",
   },
 };
 
 class NetworkManager {
-  private currentNetwork: string = 'mina:devnet';
+  private currentNetwork: string = "mina:devnet";
 
   async switchNetwork(networkId: string): Promise<void> {
     const config = NETWORK_CONFIGS[networkId];
@@ -726,9 +776,9 @@ class NetworkManager {
     this.currentNetwork = networkId;
 
     // Notify wallet if available
-    if (typeof window !== 'undefined' && window.mina) {
+    if (typeof window !== "undefined" && window.mina) {
       await window.mina.request({
-        method: 'mina_switchchain',
+        method: "mina_switchchain",
         params: { chainId: networkId },
       });
     }
@@ -741,9 +791,9 @@ class NetworkManager {
   async addCustomNetwork(config: NetworkConfig): Promise<void> {
     NETWORK_CONFIGS[config.networkId] = config;
 
-    if (typeof window !== 'undefined' && window.mina) {
+    if (typeof window !== "undefined" && window.mina) {
       await window.mina.request({
-        method: 'mina_addchain',
+        method: "mina_addchain",
         params: {
           chainId: config.networkId,
           chainName: config.name,
@@ -756,12 +806,12 @@ class NetworkManager {
 
   isL2Network(networkId?: string): boolean {
     const id = networkId || this.currentNetwork;
-    return id.startsWith('zeko:');
+    return id.startsWith("zeko:");
   }
 
   getL1Equivalent(l2NetworkId: string): string {
-    if (l2NetworkId === 'zeko:mainnet') return 'mina:mainnet';
-    if (l2NetworkId === 'zeko:devnet') return 'mina:devnet';
+    if (l2NetworkId === "zeko:mainnet") return "mina:mainnet";
+    if (l2NetworkId === "zeko:devnet") return "mina:devnet";
     throw new Error(`No L1 equivalent for ${l2NetworkId}`);
   }
 }
@@ -785,18 +835,23 @@ class HybridDappManager {
   async deployContract(
     contractClass: typeof SmartContract,
     constructorArgs: any[],
-    targetLayer: 'L1' | 'L2'
+    targetLayer: "L1" | "L2"
   ): Promise<SmartContract> {
     const originalNetwork = this.networkManager.getCurrentNetwork();
 
     try {
       // Switch to target network
-      if (targetLayer === 'L1' && this.networkManager.isL2Network()) {
-        const l1Network = this.networkManager.getL1Equivalent(originalNetwork.networkId);
+      if (targetLayer === "L1" && this.networkManager.isL2Network()) {
+        const l1Network = this.networkManager.getL1Equivalent(
+          originalNetwork.networkId
+        );
         await this.networkManager.switchNetwork(l1Network);
-      } else if (targetLayer === 'L2' && !this.networkManager.isL2Network()) {
+      } else if (targetLayer === "L2" && !this.networkManager.isL2Network()) {
         // Switch to corresponding L2
-        const l2Network = originalNetwork.networkId === 'mina:mainnet' ? 'zeko:mainnet' : 'zeko:devnet';
+        const l2Network =
+          originalNetwork.networkId === "mina:mainnet"
+            ? "zeko:mainnet"
+            : "zeko:devnet";
         await this.networkManager.switchNetwork(l2Network);
       }
 
@@ -816,11 +871,11 @@ class HybridDappManager {
       await tx.send();
 
       // Store contract reference
-      const contractMap = targetLayer === 'L1' ? this.l1Contracts : this.l2Contracts;
+      const contractMap =
+        targetLayer === "L1" ? this.l1Contracts : this.l2Contracts;
       contractMap.set(contract.constructor.name, contract);
 
       return contract;
-
     } finally {
       // Restore original network
       await this.networkManager.switchNetwork(originalNetwork.networkId);
@@ -835,7 +890,9 @@ class HybridDappManager {
     }
 
     try {
-      const l1Network = this.networkManager.getL1Equivalent(originalNetwork.networkId);
+      const l1Network = this.networkManager.getL1Equivalent(
+        originalNetwork.networkId
+      );
       await this.networkManager.switchNetwork(l1Network);
       return await operation();
     } finally {
@@ -851,7 +908,10 @@ class HybridDappManager {
     }
 
     try {
-      const l2Network = originalNetwork.networkId === 'mina:mainnet' ? 'zeko:mainnet' : 'zeko:devnet';
+      const l2Network =
+        originalNetwork.networkId === "mina:mainnet"
+          ? "zeko:mainnet"
+          : "zeko:devnet";
       await this.networkManager.switchNetwork(l2Network);
       return await operation();
     } finally {
@@ -872,8 +932,11 @@ class HybridDappManager {
     return { l1Result, l2Result };
   }
 
-  getContract(contractName: string, layer: 'L1' | 'L2'): SmartContract | undefined {
-    const contractMap = layer === 'L1' ? this.l1Contracts : this.l2Contracts;
+  getContract(
+    contractName: string,
+    layer: "L1" | "L2"
+  ): SmartContract | undefined {
+    const contractMap = layer === "L1" ? this.l1Contracts : this.l2Contracts;
     return contractMap.get(contractName);
   }
 }
@@ -893,14 +956,14 @@ class HybridDEX {
     this.l1SecurityContract = await this.dappManager.deployContract(
       SecurityContract,
       [],
-      'L1'
+      "L1"
     );
 
     // Deploy high-frequency trading contract on L2
     this.l2TradingContract = await this.dappManager.deployContract(
       TradingContract,
       [],
-      'L2'
+      "L2"
     );
   }
 
@@ -915,7 +978,10 @@ class HybridDEX {
     });
   }
 
-  async performHighFrequencyTrade(amount: UInt64, price: UInt64): Promise<void> {
+  async performHighFrequencyTrade(
+    amount: UInt64,
+    price: UInt64
+  ): Promise<void> {
     await this.dappManager.executeOnL2(async () => {
       // High-frequency operations on L2 for speed
       const tx = await Mina.transaction(async () => {

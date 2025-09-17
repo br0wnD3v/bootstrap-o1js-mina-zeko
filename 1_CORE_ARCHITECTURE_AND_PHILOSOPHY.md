@@ -7,6 +7,7 @@
 ### The Three-Layer Architecture
 
 **Stack Overview for AI Agents:**
+
 - **Development Layer**: o1js (TypeScript SDK for creating zk-SNARK circuits)
 - **Base Protocol**: Mina L1 (22KB blockchain with recursive proofs)
 - **Performance Layer**: Zeko L2 (High throughput while maintaining compatibility)
@@ -40,6 +41,7 @@
 **Definition**: zkApps are zero knowledge applications built on Mina Protocol using zk-SNARKs that execute off-chain and prove their correctness on-chain.
 
 **Key Architectural Advantages:**
+
 - **Scalability**: Fixed 22KB blockchain size through recursive proofs
 - **Privacy**: Zero-knowledge execution with optional privacy
 - **Cost Efficiency**: Constant transaction costs vs. variable gas fees
@@ -47,24 +49,26 @@
 
 **Execution Model Comparison:**
 
-| Aspect | Ethereum | Mina zkApps |
-|--------|----------|-------------|
-| **Language** | Solidity | TypeScript (o1js) |
-| **Execution** | On every node | Client-side with proof verification |
-| **Costs** | Variable gas fees | Constant small fees |
-| **Storage** | All state on-chain | Flexible on/off-chain storage |
-| **Scaling** | Limited by node execution | Exponential via recursive proofs |
-| **Privacy** | Public by default | Private inputs, selective disclosure |
-| **Consensus** | ~700GB blockchain | 22KB recursive proof |
+| Aspect        | Ethereum                  | Mina zkApps                          |
+| ------------- | ------------------------- | ------------------------------------ |
+| **Language**  | Solidity                  | TypeScript (o1js)                    |
+| **Execution** | On every node             | Client-side with proof verification  |
+| **Costs**     | Variable gas fees         | Constant small fees                  |
+| **Storage**   | All state on-chain        | Flexible on/off-chain storage        |
+| **Scaling**   | Limited by node execution | Exponential via recursive proofs     |
+| **Privacy**   | Public by default         | Private inputs, selective disclosure |
+| **Consensus** | ~700GB blockchain         | 22KB recursive proof                 |
 
 ### Proof System Architecture
 
 **Kimchi + Pickles System:**
+
 - **Kimchi**: Step proof system (Rust implementation)
 - **Pickles**: Wrap proof system enabling recursion (OCaml implementation)
 - **Infinite Recursion**: Only blockchain supporting unbounded recursive proof composition
 
 **Recursive Proof Capabilities:**
+
 ```mermaid
 graph TD
     A[Base Proof] --> B[Proof of Proof 1]
@@ -78,12 +82,14 @@ graph TD
 ### Network Architecture and Consensus
 
 **Consensus Mechanism:**
+
 - **Ouroboros Proof-of-Stake**: Energy-efficient consensus
 - **SNARK Workers**: Specialized nodes for proof generation
 - **Block Producers**: Nodes that create and propose blocks
 - **Archive Nodes**: Full historical data storage
 
 **Network Topology:**
+
 - **Mainnet**: Production L1 with full decentralization
 - **Devnet/Berkeley**: Testing network with test MINA tokens
 - **Local Blockchain**: Development environment for testing
@@ -111,6 +117,7 @@ graph TD
 **Critical Concept**: o1js operates in two distinct phases that developers must understand:
 
 1. **Compile Time (Circuit Structure Determination)**:
+
    - Uses regular JavaScript/TypeScript execution
    - Determines the structure of the constraint system
    - Optimizations and conditional circuit inclusion happen here
@@ -121,6 +128,7 @@ graph TD
    - All conditional logic must use provable operations
 
 **Example of Two-Phase Design:**
+
 ```typescript
 // COMPILE TIME: Circuit structure determination
 if (keyLength > 64) {
@@ -140,12 +148,14 @@ const result = Provable.if(condition, valueA, valueB);
 **Fundamental Principle**: Every operation in o1js must be expressible as polynomial constraints over finite fields.
 
 **Key Constraints:**
+
 - **No Dynamic Programming**: Loop bounds and conditional paths must be static at compile time
 - **No Traditional Branching**: Must use `Provable.if()` for conditional values
 - **Fixed Circuit Structure**: Same constraints must be generated on every execution
 - **Size Limitations**: Larger circuits increase proof generation time exponentially
 
 **Valid vs Invalid Patterns:**
+
 ```typescript
 // ❌ INVALID - Traditional conditionals don't work in provable code
 if (condition) {
@@ -167,9 +177,16 @@ for (let i = 0; i < 10; i++) {
 }
 
 // ❌ INVALID - Side effects in conditional paths
-Provable.if(condition,
-  () => { counter.increment(); return valueA; }, // Both paths execute!
-  () => { counter.increment(); return valueB; }
+Provable.if(
+  condition,
+  () => {
+    counter.increment();
+    return valueA;
+  }, // Both paths execute!
+  () => {
+    counter.increment();
+    return valueB;
+  }
 );
 
 // ✅ VALID - Pure value selection
@@ -182,6 +199,7 @@ value.assertEquals(expectedValue);
 ### What is Zeko?
 
 Zeko is a Layer 2 ecosystem specifically designed for Mina's zero-knowledge applications (zkApps) that provides:
+
 - **Fully Mina-equivalent application layer**
 - **Improved throughput and quick confirmation times**
 - **Seamless compatibility with existing Mina tooling**
@@ -192,24 +210,26 @@ Zeko is a Layer 2 ecosystem specifically designed for Mina's zero-knowledge appl
 **Nested Ledger Model**: Zeko operates as a nested Mina ledger contained within a zkApp's account state on L1.
 
 **Core Components:**
+
 - **Outer Account (L1)**: Tracks the ledger hash of the inner ledger and manages withdrawals
 - **Inner Account (L2)**: Mirrors the outer account and manages deposits
 - **Special Bridge Account**: Connects L1 and L2 with a unique public key
 
 ### Performance Characteristics Comparison
 
-| Metric | Mina L1 | Zeko L2 |
-|--------|---------|---------|
-| **Finality** | 3-5 minutes | ~10 seconds |
-| **Throughput** | 24 zkApp tx/block | No practical limit |
-| **Cost** | ~0.1 MINA | Fraction of L1 cost |
-| **Decentralization** | Full | Sequencer-based |
-| **Security** | zk-recursive proofs | Inherits from L1 |
-| **Account Updates** | ~7 per transaction | No limit (centralized sequencer) |
+| Metric               | Mina L1             | Zeko L2                          |
+| -------------------- | ------------------- | -------------------------------- |
+| **Finality**         | 3-5 minutes         | ~10 seconds                      |
+| **Throughput**       | 24 zkApp tx/block   | No practical limit               |
+| **Cost**             | ~0.1 MINA           | Fraction of L1 cost              |
+| **Decentralization** | Full                | Sequencer-based                  |
+| **Security**         | zk-recursive proofs | Inherits from L1                 |
+| **Account Updates**  | ~7 per transaction  | No limit (centralized sequencer) |
 
 ### Key Architectural Components
 
 #### 1. Sequencer
+
 - **Role**: Acts as the "conductor" of the Zeko ecosystem
 - **Functions**:
   - Transaction collection and state application
@@ -220,6 +240,7 @@ Zeko is a Layer 2 ecosystem specifically designed for Mina's zero-knowledge appl
 - **API**: Exposes GraphQL API (subset of L1 GraphQL + L1 API for actions/events)
 
 #### 2. Modular Data Availability Layer
+
 - **Current Implementation**: Fork of EVM chain (Ethermint) with instant finality consensus
 - **Modularity Benefits**:
   - Flexibility to choose different DA solutions
@@ -228,6 +249,7 @@ Zeko is a Layer 2 ecosystem specifically designed for Mina's zero-knowledge appl
 - **Security**: Prevents data withholding attacks and ensures transaction data availability
 
 #### 3. Circuit Architecture
+
 - **Outer Circuit**: For L1 zkApp operations
 - **Inner Circuit**: For L2 transfer handling
 - **Transaction Wrapper Circuit**: For wrapping transaction SNARKs
@@ -237,12 +259,14 @@ Zeko is a Layer 2 ecosystem specifically designed for Mina's zero-knowledge appl
 ### Bridge Operations and Transfer Mechanism
 
 **Deposit Process (L1 → L2):**
+
 1. Actions submitted to outer account with MINA
 2. Recipients finalize deposits by claiming from L1 account
 3. Transfer state managed via token-based approach
 4. Action state tracking maintains processed vs. pending transfers
 
 **Withdrawal Process (L2 → L1):**
+
 1. Reverse process with similar action-based mechanism
 2. Users prove transfer hasn't been processed before
 3. Async API for creating transfer requests
@@ -253,6 +277,7 @@ Zeko is a Layer 2 ecosystem specifically designed for Mina's zero-knowledge appl
 **Seamless Integration**: Existing Mina tools, libraries, and wallets work out-of-the-box with Zeko.
 
 **Network Configuration Example:**
+
 ```typescript
 // Same codebase works on both layers!
 class MyDapp extends SmartContract {
@@ -301,7 +326,7 @@ await tx.send();
 ### **Key Transaction Concepts**
 
 ```typescript
-import { Mina, PrivateKey, PublicKey, AccountUpdate } from 'o1js';
+import { Mina, PrivateKey, PublicKey, AccountUpdate } from "o1js";
 
 // 1. Network Connection (Essential First Step)
 const Local = Mina.LocalBlockchain({ proofsEnabled: true });
@@ -309,8 +334,8 @@ Mina.setActiveInstance(Local);
 
 // Or connect to live network
 const network = Mina.Network({
-  mina: 'https://api.minascan.io/node/devnet/v1/graphql',
-  archive: 'https://api.minascan.io/archive/devnet/v1/graphql'
+  mina: "https://api.minascan.io/node/devnet/v1/graphql",
+  archive: "https://api.minascan.io/archive/devnet/v1/graphql",
 });
 Mina.setActiveInstance(network);
 
@@ -377,45 +402,45 @@ export class NetworkManager {
   static setupLocal(): void {
     const Local = Mina.LocalBlockchain({
       proofsEnabled: true,
-      enforceTransactionLimits: false // For testing
+      enforceTransactionLimits: false, // For testing
     });
     Mina.setActiveInstance(Local);
   }
 
   static setupDevnet(): void {
     const network = Mina.Network({
-      mina: 'https://api.minascan.io/node/devnet/v1/graphql',
-      archive: 'https://api.minascan.io/archive/devnet/v1/graphql'
+      mina: "https://api.minascan.io/node/devnet/v1/graphql",
+      archive: "https://api.minascan.io/archive/devnet/v1/graphql",
     });
     Mina.setActiveInstance(network);
   }
 
   static setupMainnet(): void {
     const network = Mina.Network({
-      mina: 'https://api.minascan.io/node/mainnet/v1/graphql',
-      archive: 'https://api.minascan.io/archive/mainnet/v1/graphql'
+      mina: "https://api.minascan.io/node/mainnet/v1/graphql",
+      archive: "https://api.minascan.io/archive/mainnet/v1/graphql",
     });
     Mina.setActiveInstance(network);
   }
 
   static async waitForTransaction(txHash: string): Promise<void> {
-    console.log('Waiting for transaction confirmation...');
+    console.log("Waiting for transaction confirmation...");
 
     for (let attempt = 0; attempt < 50; attempt++) {
       try {
         const status = await Mina.getTransactionStatus(txHash);
-        if (status === 'INCLUDED') {
-          console.log('Transaction confirmed!');
+        if (status === "INCLUDED") {
+          console.log("Transaction confirmed!");
           return;
         }
       } catch (error) {
         // Transaction not yet included
       }
 
-      await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+      await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds
     }
 
-    throw new Error('Transaction confirmation timeout');
+    throw new Error("Transaction confirmation timeout");
   }
 }
 ```
@@ -427,6 +452,7 @@ export class NetworkManager {
 ### When to Use Each Layer
 
 #### **Mina L1 - Recommend for:**
+
 - **Security-first applications**: Maximum decentralization and security
 - **Long-term value storage**: DeFi protocols, treasury management
 - **Cross-ecosystem bridges**: Interoperability with other blockchains
@@ -437,6 +463,7 @@ export class NetworkManager {
 **Trade-offs**: 3-5 minute finality, limited throughput
 
 #### **Zeko L2 - Recommend for:**
+
 - **High-frequency applications**: DEX trading, gaming, real-time interactions
 - **User experience focused apps**: Applications needing instant feedback
 - **Cost-sensitive use cases**: Micro-transactions, frequent interactions
@@ -449,21 +476,25 @@ export class NetworkManager {
 ### Market Opportunities and Applications
 
 **Privacy-preserving DeFi:**
+
 - Hidden transaction amounts using zk-proofs
 - Private order books and MEV protection
 - Compliance-friendly privacy solutions
 
 **Scalable Gaming:**
+
 - Private game state with zk-proof verification
 - Fast state updates via Zeko L2
 - Provable randomness and fair gameplay
 
 **Identity Solutions:**
+
 - zk-proof based authentication
 - Selective disclosure of credentials
 - Privacy-preserving KYC/AML
 
 **Compliance Tools:**
+
 - Private regulatory reporting
 - Audit-friendly transaction logs
 - Zero-knowledge compliance verification
@@ -471,6 +502,7 @@ export class NetworkManager {
 ### Ecosystem Competitive Advantages
 
 **Unique Technical Capabilities:**
+
 1. **Only blockchain with infinite recursion** (Kimchi + Pickles)
 2. **Client-side proof generation** (no network congestion)
 3. **Constant-size blockchain** (22KB forever)
@@ -479,6 +511,7 @@ export class NetworkManager {
 6. **Unified L1/L2 development experience**
 
 **Ecosystem Positioning:**
+
 - **Mina L1**: The "Bitcoin" of privacy (security, decentralization)
 - **Zeko L2**: The "Lightning" of privacy (speed, scalability)
 - **o1js**: The "React" of zk-development (developer experience)
@@ -486,6 +519,7 @@ export class NetworkManager {
 ## Version Information and Evolution
 
 ### o1js Evolution
+
 - **Current Version**: o1js 2.9.0 (released September 2, 2025)
 - **Previous Name**: SnarkyJS (49 versions, 43,141 downloads)
 - **Recent Features (2.7.0 → 2.9.0)**:
@@ -496,6 +530,7 @@ export class NetworkManager {
   - DynamicArray reverse functionality and enhanced constraint system analysis tools
 
 ### Active Development Status
+
 - **Monthly Updates**: Regular o1js releases with new features
 - **Community**: Active Discord channels for developers
 - **Documentation**: Comprehensive tutorials and API reference
@@ -503,6 +538,7 @@ export class NetworkManager {
 - **Third-party Audits**: Veridise conducted external audit (Q3 2024)
 
 ### Browser Compatibility Requirements
+
 - **WebAssembly**: Required for performance
 - **SharedArrayBuffer**: Needs specific CORS headers:
   ```

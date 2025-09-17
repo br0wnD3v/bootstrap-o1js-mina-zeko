@@ -36,6 +36,14 @@ npm run testw         # Run tests in watch mode
 npm run coverage      # Generate coverage report
 ```
 
+### Lightnet Local Network Workflow
+
+- Start the managed Lightnet instance directly from zkApp CLI: `zk lightnet start`, manage logs with `zk lightnet logs`, open the explorer via `zk lightnet explorer`, and stop it using `zk lightnet stop` (`o1js/README-dev.md:339`).
+- You can also run the `o1labs/mina-local-network:compatible-latest-lightnet` Docker image with the documented port and environment variable setup when you need a standalone container (`o1js/README-dev.md:352`).
+- Configure your client with `Mina.Network({ mina, archive, lightnetAccountManager })` so the SDK knows where to reach the Lightnet account manager (`o1js/src/lib/mina/v1/mina.ts:159`).
+- Acquire throwaway funded key pairs from Lightnet inside tests with `const { privateKey } = await Lightnet.acquireKeyPair({ isRegularAccount: true });`, list outstanding reservations via `Lightnet.listAcquiredKeyPairs()`, and release keys once finished using `await Lightnet.releaseKeyPair({ publicKey: pk.toBase58() });` (`o1js/src/lib/mina/v1/fetch.ts:886`).
+- Always release keys after use; the account manager keeps track of reservations and will refuse new allocations if previous accounts are left checked out.
+
 ### Advanced Project Structure for Production
 
 ```
@@ -78,6 +86,7 @@ interface NetworkConfig {
   archive?: string;
   explorer?: string;
   faucet?: string;
+  lightnetAccountManager?: string;
 }
 
 interface DeploymentConfig {
@@ -99,9 +108,9 @@ class ConfigManager {
 
   private loadConfigs(): void {
     // Load from config files
-    const environments = ['development', 'staging', 'production'];
+    const environments = ["development", "staging", "production"];
 
-    environments.forEach(env => {
+    environments.forEach((env) => {
       try {
         const config = require(`config/${env}.json`);
         this.configs.set(env, config);
@@ -120,7 +129,7 @@ class ConfigManager {
   }
 
   getCurrentConfig(): DeploymentConfig {
-    const env = process.env.NODE_ENV || 'development';
+    const env = process.env.NODE_ENV || "development";
     return this.getConfig(env);
   }
 
@@ -130,6 +139,7 @@ class ConfigManager {
     const network = Mina.Network({
       mina: config.network.mina,
       archive: config.network.archive,
+      lightnetAccountManager: config.network.lightnetAccountManager,
     });
 
     Mina.setActiveInstance(network);
@@ -140,7 +150,7 @@ class ConfigManager {
 
 // Usage example
 const configManager = new ConfigManager();
-await configManager.setupNetwork('development');
+await configManager.setupNetwork("development");
 ```
 
 ## Comprehensive Testing Strategy
@@ -149,10 +159,17 @@ await configManager.setupNetwork('development');
 
 ```typescript
 // tests/unit/TokenContract.test.ts
-import { TokenContract } from 'src/contracts/tokens/TokenContract';
-import { Field, UInt64, PrivateKey, PublicKey, AccountUpdate, Mina } from 'o1js';
+import { TokenContract } from "src/contracts/tokens/TokenContract";
+import {
+  Field,
+  UInt64,
+  PrivateKey,
+  PublicKey,
+  AccountUpdate,
+  Mina,
+} from "o1js";
 
-describe('TokenContract', () => {
+describe("TokenContract", () => {
   let tokenContract: TokenContract;
   let deployerKey: PrivateKey;
   let deployerAccount: PublicKey;
@@ -161,7 +178,7 @@ describe('TokenContract', () => {
 
   beforeAll(async () => {
     // Compile contract once for all tests
-    console.log('Compiling TokenContract...');
+    console.log("Compiling TokenContract...");
     await TokenContract.compile();
   });
 
@@ -184,8 +201,8 @@ describe('TokenContract', () => {
     await localDeploy(contractKey, deployerKey);
   });
 
-  describe('Token Minting', () => {
-    it('should mint tokens to specified address', async () => {
+  describe("Token Minting", () => {
+    it("should mint tokens to specified address", async () => {
       const mintAmount = UInt64.from(1000);
 
       const tx = await Mina.transaction(deployerAccount, () => {
@@ -199,7 +216,7 @@ describe('TokenContract', () => {
       expect(balance).toEqual(mintAmount);
     });
 
-    it('should update total supply when minting', async () => {
+    it("should update total supply when minting", async () => {
       const mintAmount = UInt64.from(500);
       const initialSupply = tokenContract.totalSupply.get();
 
@@ -213,7 +230,7 @@ describe('TokenContract', () => {
       expect(newSupply).toEqual(initialSupply.add(mintAmount));
     });
 
-    it('should fail when non-owner tries to mint', async () => {
+    it("should fail when non-owner tries to mint", async () => {
       const mintAmount = UInt64.from(100);
 
       await expect(async () => {
@@ -226,7 +243,7 @@ describe('TokenContract', () => {
     });
   });
 
-  describe('Token Transfers', () => {
+  describe("Token Transfers", () => {
     beforeEach(async () => {
       // Mint tokens to user for transfer tests
       const tx = await Mina.transaction(deployerAccount, () => {
@@ -236,7 +253,7 @@ describe('TokenContract', () => {
       await tx.send();
     });
 
-    it('should transfer tokens between accounts', async () => {
+    it("should transfer tokens between accounts", async () => {
       const recipientKey = PrivateKey.random();
       const recipientAccount = recipientKey.toPublicKey();
       const transferAmount = UInt64.from(200);
@@ -249,8 +266,14 @@ describe('TokenContract', () => {
       await tx.send();
 
       // Verify balances
-      const senderBalance = Mina.getBalance(userAccount, tokenContract.token.id);
-      const recipientBalance = Mina.getBalance(recipientAccount, tokenContract.token.id);
+      const senderBalance = Mina.getBalance(
+        userAccount,
+        tokenContract.token.id
+      );
+      const recipientBalance = Mina.getBalance(
+        recipientAccount,
+        tokenContract.token.id
+      );
 
       expect(senderBalance).toEqual(UInt64.from(800));
       expect(recipientBalance).toEqual(transferAmount);
@@ -258,7 +281,10 @@ describe('TokenContract', () => {
   });
 
   // Helper function for contract deployment
-  async function localDeploy(contractKey: PrivateKey, deployerKey: PrivateKey): Promise<void> {
+  async function localDeploy(
+    contractKey: PrivateKey,
+    deployerKey: PrivateKey
+  ): Promise<void> {
     const tx = await Mina.transaction(deployerKey, () => {
       AccountUpdate.fundNewAccount(deployerKey);
       tokenContract.deploy({ zkappKey: contractKey });
@@ -273,11 +299,11 @@ describe('TokenContract', () => {
 
 ```typescript
 // tests/integration/DEX.integration.test.ts
-import { DEXContract } from 'src/contracts/DEXContract';
-import { TokenContract } from 'src/contracts/tokens/TokenContract';
-import { LiquidityPoolContract } from 'src/contracts/LiquidityPoolContract';
+import { DEXContract } from "src/contracts/DEXContract";
+import { TokenContract } from "src/contracts/tokens/TokenContract";
+import { LiquidityPoolContract } from "src/contracts/LiquidityPoolContract";
 
-describe('DEX Integration Tests', () => {
+describe("DEX Integration Tests", () => {
   let dex: DEXContract;
   let tokenA: TokenContract;
   let tokenB: TokenContract;
@@ -301,7 +327,7 @@ describe('DEX Integration Tests', () => {
     await setupInitialLiquidity();
   });
 
-  it('should execute complete swap flow', async () => {
+  it("should execute complete swap flow", async () => {
     const trader = Local.testAccounts[2];
     const swapAmount = UInt64.from(100);
 
@@ -319,7 +345,7 @@ describe('DEX Integration Tests', () => {
     await verifySwapResults(trader, swapAmount, expectedOutput);
   });
 
-  it('should handle liquidity provision correctly', async () => {
+  it("should handle liquidity provision correctly", async () => {
     const liquidityProvider = Local.testAccounts[3];
     const amountA = UInt64.from(1000);
     const amountB = UInt64.from(2000);
@@ -337,7 +363,10 @@ describe('DEX Integration Tests', () => {
     // Setup initial liquidity for testing
   }
 
-  async function mintTokensToTrader(trader: any, amount: UInt64): Promise<void> {
+  async function mintTokensToTrader(
+    trader: any,
+    amount: UInt64
+  ): Promise<void> {
     // Mint tokens to trader account
   }
 
@@ -349,10 +378,10 @@ describe('DEX Integration Tests', () => {
 
 ```typescript
 // tests/e2e/deployment.e2e.test.ts
-import { ConfigManager } from 'src/config/ConfigManager';
-import { DeploymentManager } from 'src/scripts/DeploymentManager';
+import { ConfigManager } from "src/config/ConfigManager";
+import { DeploymentManager } from "src/scripts/DeploymentManager";
 
-describe('E2E Deployment Tests', () => {
+describe("E2E Deployment Tests", () => {
   let configManager: ConfigManager;
   let deploymentManager: DeploymentManager;
 
@@ -361,23 +390,25 @@ describe('E2E Deployment Tests', () => {
     deploymentManager = new DeploymentManager(configManager);
 
     // Connect to testnet
-    await configManager.setupNetwork('staging');
+    await configManager.setupNetwork("staging");
   });
 
-  it('should deploy contracts to testnet', async () => {
+  it("should deploy contracts to testnet", async () => {
     const deploymentResult = await deploymentManager.deployAll();
 
     expect(deploymentResult.success).toBe(true);
     expect(deploymentResult.contractAddresses).toBeDefined();
 
     // Verify contracts are actually deployed
-    for (const [name, address] of Object.entries(deploymentResult.contractAddresses)) {
+    for (const [name, address] of Object.entries(
+      deploymentResult.contractAddresses
+    )) {
       const accountInfo = await Mina.getAccount(PublicKey.fromBase58(address));
       expect(accountInfo).toBeDefined();
     }
   });
 
-  it('should interact with deployed contracts', async () => {
+  it("should interact with deployed contracts", async () => {
     const addresses = await deploymentManager.getDeployedAddresses();
     const tokenContract = new TokenContract(addresses.tokenContract);
 
@@ -387,7 +418,10 @@ describe('E2E Deployment Tests', () => {
 
     // Execute transaction
     const mintTx = await Mina.transaction(() => {
-      tokenContract.mint(PublicKey.fromBase58(addresses.owner), UInt64.from(1000));
+      tokenContract.mint(
+        PublicKey.fromBase58(addresses.owner),
+        UInt64.from(1000)
+      );
     });
 
     await mintTx.prove();
@@ -411,19 +445,19 @@ describe('E2E Deployment Tests', () => {
       try {
         // Query transaction status
         const status = await Mina.getTransactionStatus(txHash);
-        confirmed = status === 'INCLUDED';
+        confirmed = status === "INCLUDED";
       } catch {
         // Transaction not yet included
       }
 
       if (!confirmed) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+        await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds
         attempts++;
       }
     }
 
     if (!confirmed) {
-      throw new Error('Transaction confirmation timeout');
+      throw new Error("Transaction confirmation timeout");
     }
   }
 });
@@ -435,8 +469,8 @@ describe('E2E Deployment Tests', () => {
 
 ```typescript
 // scripts/DeploymentManager.ts
-import { PrivateKey, PublicKey, Mina, AccountUpdate } from 'o1js';
-import { ConfigManager } from 'config/ConfigManager';
+import { PrivateKey, PublicKey, Mina, AccountUpdate } from "o1js";
+import { ConfigManager } from "config/ConfigManager";
 
 interface DeploymentResult {
   success: boolean;
@@ -464,18 +498,18 @@ class DeploymentManager {
 
   async deployAll(): Promise<DeploymentResult> {
     try {
-      console.log('Starting deployment process...');
+      console.log("Starting deployment process...");
 
       // Define contracts to deploy in order
       const contracts: ContractInfo[] = [
         {
-          name: 'TokenContract',
+          name: "TokenContract",
           contractClass: TokenContract,
           constructorArgs: [],
-          initArgs: ['MyToken', 'MTK', 9], // name, symbol, decimals
+          initArgs: ["MyToken", "MTK", 9], // name, symbol, decimals
         },
         {
-          name: 'DEXContract',
+          name: "DEXContract",
           contractClass: DEXContract,
           constructorArgs: [],
         },
@@ -486,9 +520,8 @@ class DeploymentManager {
       await this.saveDeploymentResults(results);
 
       return results;
-
     } catch (error) {
-      console.error('Deployment failed:', error);
+      console.error("Deployment failed:", error);
       return {
         success: false,
         contractAddresses: {},
@@ -498,7 +531,9 @@ class DeploymentManager {
     }
   }
 
-  private async deployContracts(contracts: ContractInfo[]): Promise<DeploymentResult> {
+  private async deployContracts(
+    contracts: ContractInfo[]
+  ): Promise<DeploymentResult> {
     const contractAddresses: Record<string, string> = {};
     const transactionHashes: Record<string, string> = {};
 
@@ -514,7 +549,10 @@ class DeploymentManager {
       const contractAddress = contractKey.toPublicKey();
 
       // Create contract instance
-      const contract = new contractInfo.contractClass(contractAddress, ...contractInfo.constructorArgs);
+      const contract = new contractInfo.contractClass(
+        contractAddress,
+        ...contractInfo.constructorArgs
+      );
 
       // Deploy transaction
       const tx = await Mina.transaction(this.deployerKey, () => {
@@ -539,7 +577,9 @@ class DeploymentManager {
       contractAddresses[contractInfo.name] = contractAddress.toBase58();
       transactionHashes[contractInfo.name] = pendingTx.hash;
 
-      console.log(`✅ ${contractInfo.name} deployed at: ${contractAddress.toBase58()}`);
+      console.log(
+        `✅ ${contractInfo.name} deployed at: ${contractAddress.toBase58()}`
+      );
     }
 
     return {
@@ -559,16 +599,20 @@ class DeploymentManager {
     while (!confirmed && attempts < maxAttempts) {
       try {
         const status = await Mina.getTransactionStatus(txHash);
-        if (status === 'INCLUDED') {
+        if (status === "INCLUDED") {
           confirmed = true;
           console.log(`✅ Transaction confirmed: ${txHash}`);
         }
       } catch (error) {
-        console.log(`Transaction not yet confirmed, attempt ${attempts + 1}/${maxAttempts}`);
+        console.log(
+          `Transaction not yet confirmed, attempt ${
+            attempts + 1
+          }/${maxAttempts}`
+        );
       }
 
       if (!confirmed) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+        await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds
         attempts++;
       }
     }
@@ -578,7 +622,9 @@ class DeploymentManager {
     }
   }
 
-  private async saveDeploymentResults(results: DeploymentResult): Promise<void> {
+  private async saveDeploymentResults(
+    results: DeploymentResult
+  ): Promise<void> {
     const config = this.configManager.getCurrentConfig();
     const timestamp = new Date().toISOString();
 
@@ -591,7 +637,7 @@ class DeploymentManager {
     };
 
     // Save to file
-    const fs = await import('fs/promises');
+    const fs = await import("fs/promises");
     const filename = `deployments/${config.network.networkId}-${timestamp}.json`;
     await fs.writeFile(filename, JSON.stringify(deploymentRecord, null, 2));
 
@@ -628,8 +674,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -655,8 +701,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -682,8 +728,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -712,8 +758,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -747,7 +793,7 @@ jobs:
 
 ```typescript
 // tools/CircuitAnalyzer.ts
-import { Provable } from 'o1js';
+import { Provable } from "o1js";
 
 interface CircuitMetrics {
   constraintCount: number;
@@ -770,14 +816,18 @@ class CircuitAnalyzer {
       publicInputCount: analysis.publicInputSize,
       witnessCount: analysis.witnessSize,
       estimatedProofTime: this.estimateProofTime(analysis.numConstraints),
-      estimatedVerificationTime: this.estimateVerificationTime(analysis.numConstraints),
+      estimatedVerificationTime: this.estimateVerificationTime(
+        analysis.numConstraints
+      ),
       memoryUsage: this.estimateMemoryUsage(analysis.numConstraints),
     };
   }
 
-  static compareImplementations(implementations: Record<string, Function>): void {
-    console.log('Circuit Implementation Comparison:');
-    console.log('=====================================');
+  static compareImplementations(
+    implementations: Record<string, Function>
+  ): void {
+    console.log("Circuit Implementation Comparison:");
+    console.log("=====================================");
 
     const results = Object.entries(implementations).map(([name, impl]) => {
       const metrics = this.analyzeMethod(impl);
@@ -790,9 +840,13 @@ class CircuitAnalyzer {
     results.forEach((result, index) => {
       console.log(`${index + 1}. ${result.name}`);
       console.log(`   Constraints: ${result.constraintCount.toLocaleString()}`);
-      console.log(`   Est. Proof Time: ${result.estimatedProofTime.toFixed(2)}s`);
-      console.log(`   Est. Memory: ${(result.memoryUsage / 1024 / 1024).toFixed(2)}MB`);
-      console.log('');
+      console.log(
+        `   Est. Proof Time: ${result.estimatedProofTime.toFixed(2)}s`
+      );
+      console.log(
+        `   Est. Memory: ${(result.memoryUsage / 1024 / 1024).toFixed(2)}MB`
+      );
+      console.log("");
     });
   }
 
@@ -815,19 +869,19 @@ class CircuitAnalyzer {
 
 // Usage example
 const implementations = {
-  'Naive Implementation': () => {
+  "Naive Implementation": () => {
     // Inefficient approach
     let sum = Field(0);
     for (let i = 0; i < 100; i++) {
       sum = sum.add(Field(i).mul(Field(i)));
     }
   },
-  'Optimized Implementation': () => {
+  "Optimized Implementation": () => {
     // More efficient approach
     const values = Array.from({ length: 100 }, (_, i) => Field(i));
     const sum = values.reduce((acc, val) => acc.add(val.square()), Field(0));
   },
-  'Batched Implementation': () => {
+  "Batched Implementation": () => {
     // Batch operations
     const batch = Provable.Array(Field, 100);
     const values = batch.from(Array.from({ length: 100 }, (_, i) => Field(i)));
@@ -860,10 +914,7 @@ class PerformanceMonitor {
     this.metricsEndpoint = metricsEndpoint;
   }
 
-  async measureAsync<T>(
-    operation: string,
-    fn: () => Promise<T>
-  ): Promise<T> {
+  async measureAsync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
     const startTime = performance.now();
     const startMemory = this.getMemoryUsage();
 
@@ -934,31 +985,40 @@ class PerformanceMonitor {
   }
 
   getAverageTime(operation: string): number {
-    const operationMetrics = this.metrics.filter(m => m.operation === operation && m.success);
+    const operationMetrics = this.metrics.filter(
+      (m) => m.operation === operation && m.success
+    );
     if (operationMetrics.length === 0) return 0;
 
-    const total = operationMetrics.reduce((sum, metric) => sum + metric.duration, 0);
+    const total = operationMetrics.reduce(
+      (sum, metric) => sum + metric.duration,
+      0
+    );
     return total / operationMetrics.length;
   }
 
   getSuccessRate(operation: string): number {
-    const operationMetrics = this.metrics.filter(m => m.operation === operation);
+    const operationMetrics = this.metrics.filter(
+      (m) => m.operation === operation
+    );
     if (operationMetrics.length === 0) return 0;
 
-    const successful = operationMetrics.filter(m => m.success).length;
+    const successful = operationMetrics.filter((m) => m.success).length;
     return successful / operationMetrics.length;
   }
 
   generateReport(): string {
-    const operations = [...new Set(this.metrics.map(m => m.operation))];
+    const operations = [...new Set(this.metrics.map((m) => m.operation))];
 
-    let report = 'Performance Report\n';
-    report += '==================\n\n';
+    let report = "Performance Report\n";
+    report += "==================\n\n";
 
-    operations.forEach(operation => {
+    operations.forEach((operation) => {
       const avgTime = this.getAverageTime(operation);
       const successRate = this.getSuccessRate(operation);
-      const count = this.metrics.filter(m => m.operation === operation).length;
+      const count = this.metrics.filter(
+        (m) => m.operation === operation
+      ).length;
 
       report += `Operation: ${operation}\n`;
       report += `  Executions: ${count}\n`;
@@ -986,17 +1046,17 @@ class PerformanceMonitor {
   private async sendMetric(metric: PerformanceMetrics): Promise<void> {
     try {
       await fetch(this.metricsEndpoint!, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(metric),
       });
     } catch (error) {
-      console.warn('Failed to send metric to monitoring endpoint:', error);
+      console.warn("Failed to send metric to monitoring endpoint:", error);
     }
   }
 
   private getMemoryUsage(): number {
-    if (typeof process !== 'undefined' && process.memoryUsage) {
+    if (typeof process !== "undefined" && process.memoryUsage) {
       return process.memoryUsage().heapUsed;
     }
     return 0;
@@ -1011,14 +1071,14 @@ export const performanceMonitor = new PerformanceMonitor(
 // Usage in contracts
 class OptimizedContract extends SmartContract {
   @method async performComplexOperation(input: Field): Promise<Field> {
-    return performanceMonitor.measureAsync('complexOperation', async () => {
+    return performanceMonitor.measureAsync("complexOperation", async () => {
       // Complex operation implementation
       return this.complexCalculation(input);
     });
   }
 
   private complexCalculation(input: Field): Field {
-    return performanceMonitor.measureSync('complexCalculation', () => {
+    return performanceMonitor.measureSync("complexCalculation", () => {
       // Actual calculation
       return input.mul(input).add(Field(1));
     });
@@ -1035,7 +1095,7 @@ class OptimizedContract extends SmartContract {
 ```typescript
 // security/SecurityChecklist.ts
 interface SecurityIssue {
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   category: string;
   description: string;
   location: string;
@@ -1068,11 +1128,12 @@ class SecurityAnalyzer {
 
     if (getMatches > requireMatches * 2) {
       this.issues.push({
-        severity: 'HIGH',
-        category: 'State Validation',
-        description: 'Potential missing state preconditions',
+        severity: "HIGH",
+        category: "State Validation",
+        description: "Potential missing state preconditions",
         location: contractName,
-        recommendation: 'Use .getAndRequireEquals() or add explicit .requireEquals() calls',
+        recommendation:
+          "Use .getAndRequireEquals() or add explicit .requireEquals() calls",
       });
     }
   }
@@ -1087,20 +1148,22 @@ class SecurityAnalyzer {
       methods.push(match[1]);
     }
 
-    methods.forEach(method => {
+    methods.forEach((method) => {
       const methodStart = code.indexOf(`async ${method}`);
-      const methodEnd = code.indexOf('}', methodStart);
+      const methodEnd = code.indexOf("}", methodStart);
       const methodCode = code.substring(methodStart, methodEnd);
 
-      if (!methodCode.includes('this.sender') &&
-          !methodCode.includes('signature.verify') &&
-          !methodCode.includes('requireEquals')) {
+      if (
+        !methodCode.includes("this.sender") &&
+        !methodCode.includes("signature.verify") &&
+        !methodCode.includes("requireEquals")
+      ) {
         this.issues.push({
-          severity: 'MEDIUM',
-          category: 'Access Control',
+          severity: "MEDIUM",
+          category: "Access Control",
           description: `Method ${method} may lack access control`,
           location: `${contractName}.${method}`,
-          recommendation: 'Add appropriate access control checks',
+          recommendation: "Add appropriate access control checks",
         });
       }
     });
@@ -1116,41 +1179,41 @@ class SecurityAnalyzer {
 
     if (arithmeticOps > rangeChecks) {
       this.issues.push({
-        severity: 'MEDIUM',
-        category: 'Integer Overflow',
-        description: 'Arithmetic operations without range checks',
+        severity: "MEDIUM",
+        category: "Integer Overflow",
+        description: "Arithmetic operations without range checks",
         location: contractName,
-        recommendation: 'Add range checks for arithmetic operations',
+        recommendation: "Add range checks for arithmetic operations",
       });
     }
   }
 
   private checkSignatureValidation(code: string, contractName: string): void {
     // Check for proper signature validation
-    if (code.includes('Signature') && !code.includes('.verify(')) {
+    if (code.includes("Signature") && !code.includes(".verify(")) {
       this.issues.push({
-        severity: 'HIGH',
-        category: 'Signature Validation',
-        description: 'Signature parameter without verification',
+        severity: "HIGH",
+        category: "Signature Validation",
+        description: "Signature parameter without verification",
         location: contractName,
-        recommendation: 'Always verify signatures before using them',
+        recommendation: "Always verify signatures before using them",
       });
     }
   }
 
   private checkReentrancy(code: string, contractName: string): void {
     // Check for potential reentrancy issues
-    if (code.includes('this.send(') && code.includes('.set(')) {
-      const sendIndex = code.indexOf('this.send(');
-      const setState = code.indexOf('.set(', sendIndex);
+    if (code.includes("this.send(") && code.includes(".set(")) {
+      const sendIndex = code.indexOf("this.send(");
+      const setState = code.indexOf(".set(", sendIndex);
 
       if (setState !== -1 && setState > sendIndex) {
         this.issues.push({
-          severity: 'HIGH',
-          category: 'Reentrancy',
-          description: 'State modification after external call',
+          severity: "HIGH",
+          category: "Reentrancy",
+          description: "State modification after external call",
           location: contractName,
-          recommendation: 'Update state before making external calls',
+          recommendation: "Update state before making external calls",
         });
       }
     }
@@ -1241,3 +1304,5 @@ This completes the comprehensive 6-part documentation covering everything from c
 <function_calls>
 <invoke name="TodoWrite">
 <parameter name="todos">[{"content": "Create Part 1: Core Architecture and Philosophy", "status": "completed", "activeForm": "Creating Part 1 documentation"}, {"content": "Create Part 2: o1js Framework Deep Dive", "status": "completed", "activeForm": "Creating Part 2 documentation"}, {"content": "Create Part 3: Smart Contract Development Patterns", "status": "completed", "activeForm": "Creating Part 3 documentation"}, {"content": "Create Part 4: Advanced Features and Recursion", "status": "completed", "activeForm": "Creating Part 4 documentation"}, {"content": "Create Part 5: Zeko L2 Architecture and Integration", "status": "completed", "activeForm": "Creating Part 5 documentation"}, {"content": "Create Part 6: Development Workflows and Best Practices", "status": "completed", "activeForm": "Creating Part 6 documentation"}]
+
+After you are done reading reply with "Understood, Time to MOG."

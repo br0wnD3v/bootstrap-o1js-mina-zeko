@@ -28,6 +28,7 @@ const isEqual = field1.equals(field2); // Returns Bool
 ```
 
 **Range and Overflow Behavior:**
+
 - **Maximum Value**: 28,948,022,309,329,048,855,892,746,252,171,976,963,317,496,166,410,141,009,864,396,001,978,282,409,984
 - **Automatic Modular Arithmetic**: Values wrap around at field modulus
 - **No Traditional Overflow**: Different from typical programming languages
@@ -56,12 +57,12 @@ bool1.assertFalse(); // Constraint that bool1 must be false
 
 ```typescript
 // Unsigned integers with automatic range checking
-const uint8 = UInt8.from(255);    // 0 to 255
-const uint32 = UInt32.from(2**32 - 1); // 0 to 2^32-1
-const uint64 = UInt64.from(2**64 - 1); // 0 to 2^64-1
+const uint8 = UInt8.from(255); // 0 to 255
+const uint32 = UInt32.from(2 ** 32 - 1); // 0 to 2^32-1
+const uint64 = UInt64.from(2 ** 64 - 1); // 0 to 2^64-1
 
 // Signed integers
-const int64 = Int64.from(-123456789);  // -(2^63) to 2^63-1
+const int64 = Int64.from(-123456789); // -(2^63) to 2^63-1
 
 // Operations with overflow checking
 const sum = uint32.add(UInt32.from(100));
@@ -177,7 +178,11 @@ const fieldArray = FieldArray3.from([Field(1), Field(2), Field(3)]);
 // Witness pattern for dynamic array creation
 const dynamicArray = Provable.witness(FieldArray3, () => {
   // Compute array values off-circuit
-  return [Field(computeValue1()), Field(computeValue2()), Field(computeValue3())];
+  return [
+    Field(computeValue1()),
+    Field(computeValue2()),
+    Field(computeValue3()),
+  ];
 });
 
 // Array iteration (must be fixed-size)
@@ -225,7 +230,7 @@ function efficientSquareRoot(y: Field): Field {
     const yBigInt = y.toBigInt();
     const sqrtBigInt = computeSquareRoot(yBigInt); // Expensive operation
     return Field(sqrtBigInt);
-  }).let(x => {
+  }).let((x) => {
     // Prove the result is correct in-circuit (constraint generation)
     x.mul(x).assertEquals(y); // Only this constraint is added to circuit
     return x;
@@ -241,18 +246,23 @@ const sqrt = efficientSquareRoot(input); // Returns Field(4)
 
 ```typescript
 // Witness for complex data structures
-function witnessComplexComputation(inputs: Field[]): { result: Field; proof: Field[] } {
+function witnessComplexComputation(inputs: Field[]): {
+  result: Field;
+  proof: Field[];
+} {
   return Provable.witness(
     Provable.Struct({ result: Field, proof: Provable.Array(Field, 5) }),
     () => {
       // Off-circuit computation
-      const complexResult = performComplexAlgorithm(inputs.map(f => f.toBigInt()));
+      const complexResult = performComplexAlgorithm(
+        inputs.map((f) => f.toBigInt())
+      );
       return {
         result: Field(complexResult.value),
-        proof: complexResult.proofData.map(p => Field(p)),
+        proof: complexResult.proofData.map((p) => Field(p)),
       };
     }
-  ).let(witnessed => {
+  ).let((witnessed) => {
     // In-circuit verification
     verifyComplexResult(inputs, witnessed.result, witnessed.proof);
     return witnessed;
@@ -269,7 +279,7 @@ function conditionalWitness(condition: Bool, input: Field): Field {
     } else {
       return 0;
     }
-  }).let(result => {
+  }).let((result) => {
     // Conditional constraint application
     const constrainedResult = Provable.if(
       condition,
@@ -306,11 +316,7 @@ function complexConditional(x: Field, y: Field): Field {
   return Provable.if(
     isPositive.and(isEven),
     x.mul(y),
-    Provable.if(
-      isPositive,
-      x.add(y),
-      x.sub(y)
-    )
+    Provable.if(isPositive, x.add(y), x.sub(y))
   );
 }
 ```
@@ -365,7 +371,10 @@ function conditionalSum(array: Field[], condition: Bool): Field {
 }
 
 // Early termination pattern (all iterations still execute)
-function findFirstMatch(array: Field[], target: Field): { found: Bool; index: UInt32 } {
+function findFirstMatch(
+  array: Field[],
+  target: Field
+): { found: Bool; index: UInt32 } {
   let found = Bool(false);
   let foundIndex = UInt32.zero;
 
@@ -461,10 +470,7 @@ const length = list.length;
 const commitment = list.commitment; // Single Field representing entire list
 
 // Provable list operations
-function proveListAppend(
-  list: NumberList,
-  newElement: Field
-): NumberList {
+function proveListAppend(list: NumberList, newElement: Field): NumberList {
   const newList = list.clone();
   newList.push(newElement);
 
@@ -545,8 +551,8 @@ function hmacSha256(key: UInt8[], message: UInt8[]): UInt8[] {
   }
 
   // HMAC computation
-  const innerKey = processedKey.map(k => k.xor(UInt8.from(0x36)));
-  const outerKey = processedKey.map(k => k.xor(UInt8.from(0x5c)));
+  const innerKey = processedKey.map((k) => k.xor(UInt8.from(0x36)));
+  const outerKey = processedKey.map((k) => k.xor(UInt8.from(0x5c)));
 
   const innerHash = sha256Hash([...innerKey, ...message]);
   const finalHash = sha256Hash([...outerKey, ...innerHash]);
@@ -562,19 +568,22 @@ function hmacSha256(key: UInt8[], message: UInt8[]): UInt8[] {
 ### **Fee System in Mina**
 
 ```typescript
-import { Mina, PrivateKey, UInt64 } from 'o1js';
+import { Mina, PrivateKey, UInt64 } from "o1js";
 
 // Mina uses a constant fee structure
 const fee = UInt64.from(100_000_000); // 0.1 MINA (in nanomina)
 
 // Transaction with explicit fee
-const tx = await Mina.transaction({
-  sender: senderAccount,
-  fee: fee, // Optional - defaults to reasonable fee
-  memo: 'My zkApp transaction', // Optional transaction memo
-}, () => {
-  contract.myMethod(args);
-});
+const tx = await Mina.transaction(
+  {
+    sender: senderAccount,
+    fee: fee, // Optional - defaults to reasonable fee
+    memo: "My zkApp transaction", // Optional transaction memo
+  },
+  () => {
+    contract.myMethod(args);
+  }
+);
 
 // Common fee patterns
 const STANDARD_FEE = UInt64.from(100_000_000); // 0.1 MINA
@@ -639,8 +648,8 @@ export class TransactionManager {
     const {
       fee = UInt64.from(100_000_000),
       sender = PrivateKey.random(), // Should be provided
-      memo = '',
-      retries = 3
+      memo = "",
+      retries = 3,
     } = options;
 
     const senderAccount = sender.toPublicKey();
@@ -650,70 +659,72 @@ export class TransactionManager {
         // 1. Create transaction
         console.log(`Attempt ${attempt + 1}: Creating transaction...`);
 
-        const tx = await Mina.transaction({
-          sender: senderAccount,
-          fee,
-          memo
-        }, () => {
-          // Call the contract method dynamically
-          (contract as any)[method](...args);
-        });
+        const tx = await Mina.transaction(
+          {
+            sender: senderAccount,
+            fee,
+            memo,
+          },
+          () => {
+            // Call the contract method dynamically
+            (contract as any)[method](...args);
+          }
+        );
 
         // 2. Generate proof
-        console.log('Generating proof...');
+        console.log("Generating proof...");
         await tx.prove();
 
         // 3. Sign transaction
-        console.log('Signing transaction...');
+        console.log("Signing transaction...");
         const signedTx = tx.sign([sender]);
 
         // 4. Send transaction
-        console.log('Sending transaction...');
+        console.log("Sending transaction...");
         const pendingTx = await signedTx.send();
 
         // 5. Wait for confirmation
-        console.log('Waiting for confirmation...');
+        console.log("Waiting for confirmation...");
         await this.waitForConfirmation(pendingTx.hash);
 
         return {
           success: true,
-          txHash: pendingTx.hash
+          txHash: pendingTx.hash,
         };
-
       } catch (error) {
         console.log(`Attempt ${attempt + 1} failed:`, error.message);
 
         // Check if it's a retryable error
         if (this.isRetryableError(error)) {
           if (attempt < retries - 1) {
-            console.log('Retrying in 5 seconds...');
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log("Retrying in 5 seconds...");
+            await new Promise((resolve) => setTimeout(resolve, 5000));
             continue;
           }
         }
 
         return {
           success: false,
-          error: error.message
+          error: error.message,
         };
       }
     }
 
     return {
       success: false,
-      error: 'Max retries exceeded'
+      error: "Max retries exceeded",
     };
   }
 
   private static isRetryableError(error: any): boolean {
     const retryableErrors = [
-      'Account_precondition_unsatisfied',
-      'Network_error',
-      'Timeout',
-      'Invalid_nonce'
+      "Account_precondition_unsatisfied",
+      "Network_error",
+      "Timeout",
+      "Invalid_nonce",
     ];
 
-    return retryableErrors.some(retryableError =>
+    return retryableErrors.some((retryableError) =>
       error.message.includes(retryableError)
     );
   }
@@ -725,23 +736,22 @@ export class TransactionManager {
       try {
         const status = await Mina.getTransactionStatus(txHash);
 
-        if (status === 'INCLUDED') {
-          console.log('Transaction confirmed!');
+        if (status === "INCLUDED") {
+          console.log("Transaction confirmed!");
           return;
-        } else if (status === 'REJECTED') {
-          throw new Error('Transaction was rejected');
+        } else if (status === "REJECTED") {
+          throw new Error("Transaction was rejected");
         }
 
         // Transaction still pending
-        await new Promise(resolve => setTimeout(resolve, 10000));
-
+        await new Promise((resolve) => setTimeout(resolve, 10000));
       } catch (error) {
         if (i === maxAttempts - 1) {
-          throw new Error('Transaction confirmation timeout');
+          throw new Error("Transaction confirmation timeout");
         }
 
         // Continue waiting
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await new Promise((resolve) => setTimeout(resolve, 10000));
       }
     }
   }
@@ -752,23 +762,23 @@ async function safeContractInteraction() {
   try {
     const result = await TransactionManager.executeTransaction(
       myContract,
-      'transfer',
+      "transfer",
       [recipientAddress, UInt64.from(1000)],
       {
         fee: UInt64.from(200_000_000), // Higher fee for priority
         sender: myPrivateKey,
-        memo: 'Token transfer',
-        retries: 5
+        memo: "Token transfer",
+        retries: 5,
       }
     );
 
     if (result.success) {
-      console.log('Transaction successful:', result.txHash);
+      console.log("Transaction successful:", result.txHash);
     } else {
-      console.error('Transaction failed:', result.error);
+      console.error("Transaction failed:", result.error);
     }
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error("Unexpected error:", error);
   }
 }
 ```
@@ -780,45 +790,45 @@ async function safeContractInteraction() {
 export const MinaErrorPatterns = {
   INSUFFICIENT_BALANCE: {
     pattern: /insufficient.*balance/i,
-    solution: 'Check account balance before transaction',
+    solution: "Check account balance before transaction",
     code: `
 const balance = await Mina.getBalance(account);
 if (balance.lessThan(amount.add(fee))) {
   throw new Error('Insufficient balance');
-}`
+}`,
   },
 
   PRECONDITION_FAILED: {
     pattern: /precondition.*failed/i,
-    solution: 'Account state changed during proof generation',
+    solution: "Account state changed during proof generation",
     code: `
 // Use getAndRequireEquals() carefully
 const balance = this.account.balance.getAndRequireEquals();
 // Consider using get() if you can handle state changes
-const balance = this.account.balance.get();`
+const balance = this.account.balance.get();`,
   },
 
   INVALID_PROOF: {
     pattern: /invalid.*proof/i,
-    solution: 'Proof generation failed or circuit constraints not satisfied',
+    solution: "Proof generation failed or circuit constraints not satisfied",
     code: `
 // Ensure all assertions are satisfiable
 amount.assertGreaterThan(UInt64.zero);
 // Check constraint system
 const analysis = Provable.constraintSystem(() => {
   myMethod(testInputs);
-});`
+});`,
   },
 
   NONCE_MISMATCH: {
     pattern: /nonce.*mismatch/i,
-    solution: 'Account nonce changed between transactions',
+    solution: "Account nonce changed between transactions",
     code: `
 // Fetch fresh account state
 const account = await Mina.getAccount(publicKey);
 const currentNonce = account.nonce;
-// Wait for previous transaction to confirm before sending next`
-  }
+// Wait for previous transaction to confirm before sending next`,
+  },
 };
 ```
 
@@ -909,9 +919,9 @@ function analyzeConstraints() {
     z.assertEquals(Field(9));
   });
 
-  console.log('Constraint Summary:', analysis.summary);
-  console.log('Total Constraints:', analysis.numConstraints);
-  console.log('Constraint Details:', analysis.constraints);
+  console.log("Constraint Summary:", analysis.summary);
+  console.log("Total Constraints:", analysis.numConstraints);
+  console.log("Constraint Details:", analysis.constraints);
 }
 
 // Compare different implementations
@@ -926,8 +936,8 @@ function compareImplementations() {
     const result = expensiveMethod2();
   });
 
-  console.log('Implementation 1 constraints:', impl1.numConstraints);
-  console.log('Implementation 2 constraints:', impl2.numConstraints);
+  console.log("Implementation 1 constraints:", impl1.numConstraints);
+  console.log("Implementation 2 constraints:", impl2.numConstraints);
 }
 ```
 
@@ -977,6 +987,7 @@ function optimizeStateAccess() {
 **ZkFunction** is a new API introduced in o1js 2.8.0 that provides a simpler alternative to the deprecated `Circuit` API. It creates proofs with Kimchi directly (bypassing Pickles), making it much faster but without recursion support.
 
 **Key Characteristics:**
+
 - **Faster proving**: Direct Kimchi proof generation
 - **No recursion**: Cannot be used in recursive proof composition
 - **Not zkApp compatible**: Proofs cannot be verified by Mina zkApps
@@ -985,12 +996,12 @@ function optimizeStateAccess() {
 ### Basic ZkFunction Usage
 
 ```typescript
-import { Field, Experimental } from 'o1js';
+import { Field, Experimental } from "o1js";
 const { ZkFunction } = Experimental;
 
 // Define a simple ZkFunction
 const simpleFunction = ZkFunction({
-  name: 'simple-computation',
+  name: "simple-computation",
   publicInputType: Field,
   privateInputTypes: [Field],
   main: (publicInput: Field, privateInput: Field) => {
@@ -1010,18 +1021,18 @@ const proof = await simpleFunction.prove(publicInput, privateInput);
 
 // Verify the proof
 const isValid = await simpleFunction.verify(proof, verificationKey);
-console.log('Proof valid:', isValid); // true
+console.log("Proof valid:", isValid); // true
 ```
 
 ### ZkFunction with Complex Logic
 
 ```typescript
-import { Field, Bool, Experimental, Provable, Gadgets } from 'o1js';
+import { Field, Bool, Experimental, Provable, Gadgets } from "o1js";
 const { ZkFunction } = Experimental;
 
 // More complex ZkFunction with range checks
 const conditionalFunction = ZkFunction({
-  name: 'conditional-computation',
+  name: "conditional-computation",
   publicInputType: Field,
   privateInputTypes: [Field, Field],
   main: (threshold: Field, value: Field, multiplier: Field) => {
@@ -1036,7 +1047,7 @@ const conditionalFunction = ZkFunction({
     const result = Provable.if(
       isAbove,
       value.mul(multiplier), // If above threshold, multiply
-      value.add(Field(1))    // If below, just add 1
+      value.add(Field(1)) // If below, just add 1
     );
 
     // The result is constrained but not directly returned
@@ -1048,28 +1059,29 @@ const conditionalFunction = ZkFunction({
 const { verificationKey } = await conditionalFunction.compile();
 
 const proof = await conditionalFunction.prove(
-  Field(5),  // threshold (public)
+  Field(5), // threshold (public)
   Field(10), // value (private)
-  Field(3)   // multiplier (private)
+  Field(3) // multiplier (private)
 );
 
 const isValid = await conditionalFunction.verify(proof, verificationKey);
-console.log('Proof valid:', isValid); // true
+console.log("Proof valid:", isValid); // true
 ```
 
 ### ZkFunction vs ZkProgram Comparison
 
-| Feature | ZkFunction | ZkProgram |
-|---------|------------|-----------|
-| **Proving Speed** | Fast (direct Kimchi) | Slower (through Pickles) |
-| **Recursion Support** | ❌ No | ✅ Yes |
-| **zkApp Compatibility** | ❌ No | ✅ Yes |
-| **API Complexity** | Simple | More complex |
-| **Use Case** | Standalone proofs | zkApp integration, recursion |
+| Feature                 | ZkFunction           | ZkProgram                    |
+| ----------------------- | -------------------- | ---------------------------- |
+| **Proving Speed**       | Fast (direct Kimchi) | Slower (through Pickles)     |
+| **Recursion Support**   | ❌ No                | ✅ Yes                       |
+| **zkApp Compatibility** | ❌ No                | ✅ Yes                       |
+| **API Complexity**      | Simple               | More complex                 |
+| **Use Case**            | Standalone proofs    | zkApp integration, recursion |
 
 ### When to Use ZkFunction
 
 **Choose ZkFunction for:**
+
 - Standalone proof generation
 - Performance-critical applications
 - Simple computational proofs
@@ -1077,6 +1089,7 @@ console.log('Proof valid:', isValid); // true
 - Applications outside Mina ecosystem
 
 **Choose ZkProgram for:**
+
 - zkApp development
 - Recursive proof composition
 - Complex multi-method circuits
@@ -1086,17 +1099,20 @@ console.log('Proof valid:', isValid); // true
 
 ```typescript
 // Benchmark example
-const benchmarkFunction = ZkFunction({
-  name: 'benchmark',
-  publicInput: Field,
-  publicOutput: Field,
-}, (x: Field) => {
-  let result = x;
-  for (let i = 0; i < 100; i++) {
-    result = result.add(Field(1));
+const benchmarkFunction = ZkFunction(
+  {
+    name: "benchmark",
+    publicInput: Field,
+    publicOutput: Field,
+  },
+  (x: Field) => {
+    let result = x;
+    for (let i = 0; i < 100; i++) {
+      result = result.add(Field(1));
+    }
+    return result;
   }
-  return result;
-});
+);
 
 // Compile once
 await benchmarkFunction.compile();
@@ -1113,9 +1129,10 @@ console.log(`Result: ${proof.publicOutput.toString()}`); // "100"
 ### Migration from Circuit API
 
 **Old Circuit API (Deprecated):**
+
 ```typescript
 // ❌ Deprecated - don't use
-import { Circuit, Field } from 'o1js';
+import { Circuit, Field } from "o1js";
 
 const oldCircuit = Circuit.withSecret([Field], (x) => {
   return x.mul(x);
@@ -1123,13 +1140,14 @@ const oldCircuit = Circuit.withSecret([Field], (x) => {
 ```
 
 **New ZkFunction API:**
+
 ```typescript
 // ✅ Use this instead
-import { Field, Experimental } from 'o1js';
+import { Field, Experimental } from "o1js";
 const { ZkFunction } = Experimental;
 
 const newFunction = ZkFunction({
-  name: 'square',
+  name: "square",
   publicInputType: Field,
   privateInputTypes: [Field],
   main: (publicSquare: Field, privateInput: Field) => {
@@ -1145,7 +1163,7 @@ const newFunction = ZkFunction({
 **Note**: The `Core` namespace is an **unreleased feature** in the latest o1js development that exposes low-level bindings and protocol constants for advanced users.
 
 ```typescript
-import { Core } from 'o1js';
+import { Core } from "o1js";
 
 // Access to internal protocol constants, hashes, and prefixes
 // This provides direct access to the underlying protocol layer
@@ -1155,12 +1173,14 @@ import { Core } from 'o1js';
 ### When to Use Core Namespace
 
 **Intended for:**
+
 - Advanced protocol developers
 - Custom cryptographic implementations
 - Deep integration with Mina Protocol internals
 - Performance-critical applications requiring low-level access
 
 **Not recommended for:**
+
 - General application development
 - Standard zkApp development
 - Learning o1js basics
@@ -1168,6 +1188,7 @@ import { Core } from 'o1js';
 ### Expected Core Features
 
 Based on the changelog, the Core namespace will likely expose:
+
 - **Protocol Constants**: Network parameters and consensus constants
 - **Hash Functions**: Internal hash algorithms and configurations
 - **Prefix Values**: Transaction and proof prefixes
