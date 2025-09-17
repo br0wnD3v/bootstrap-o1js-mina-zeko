@@ -102,6 +102,17 @@ const scaledGroup = group.scale(scalar);
 // Hash functions
 const hash = Poseidon.hash([Field(1), Field(2), Field(3)]);
 const pedersenHash = Pedersen.hash(Group.generator.scale(Scalar.from(123)));
+
+// ForeignField operations (New in 2.9.0)
+// For interoperability with other cryptographic systems
+const foreignValue = Field(12345);
+
+// New unsafe constructor for advanced use cases
+const foreignField = ForeignField.Unsafe.fromField(foreignValue);
+
+// Safe operations with foreign fields
+const safeForeignField = ForeignField.from(12345);
+const foreignSum = safeForeignField.add(ForeignField.from(67890));
 ```
 
 ## Advanced Type Composition
@@ -392,6 +403,8 @@ function verifyLeafInclusion(
 
 ### IndexedMerkleMap: Key-Value Storage
 
+**Note**: IndexedMerkleMap was promoted from `Experimental` namespace to public API in o1js 2.7.0
+
 ```typescript
 // IndexedMerkleMap for key-value storage (max height 52)
 const map = new IndexedMerkleMap(40); // 2^40 possible keys
@@ -679,5 +692,210 @@ function optimizeStateAccess() {
   // Use 'state' variable multiple times
 }
 ```
+
+## ZkFunction API: Simple Circuit Creation (New in 2.8.0)
+
+### Introduction to ZkFunction
+
+**ZkFunction** is a new API introduced in o1js 2.8.0 that provides a simpler alternative to the deprecated `Circuit` API. It creates proofs with Kimchi directly (bypassing Pickles), making it much faster but without recursion support.
+
+**Key Characteristics:**
+- **Faster proving**: Direct Kimchi proof generation
+- **No recursion**: Cannot be used in recursive proof composition
+- **Not zkApp compatible**: Proofs cannot be verified by Mina zkApps
+- **Simpler API**: More ergonomic than the old Circuit API
+
+### Basic ZkFunction Usage
+
+```typescript
+import { Field, Experimental } from 'o1js';
+const { ZkFunction } = Experimental;
+
+// Define a simple ZkFunction
+const simpleFunction = ZkFunction({
+  name: 'simple-computation',
+  publicInputType: Field,
+  privateInputTypes: [Field],
+  main: (publicInput: Field, privateInput: Field) => {
+    // Simple computation: square the private input and assert equals public
+    const result = privateInput.mul(privateInput);
+    result.assertEquals(publicInput);
+  },
+});
+
+// Compile the function
+const { verificationKey } = await simpleFunction.compile();
+
+// Create a proof (proving we know square root of 25)
+const publicInput = Field(25);
+const privateInput = Field(5); // Secret square root
+const proof = await simpleFunction.prove(publicInput, privateInput);
+
+// Verify the proof
+const isValid = await simpleFunction.verify(proof, verificationKey);
+console.log('Proof valid:', isValid); // true
+```
+
+### ZkFunction with Complex Logic
+
+```typescript
+import { Field, Bool, Experimental, Provable, Gadgets } from 'o1js';
+const { ZkFunction } = Experimental;
+
+// More complex ZkFunction with range checks
+const conditionalFunction = ZkFunction({
+  name: 'conditional-computation',
+  publicInputType: Field,
+  privateInputTypes: [Field, Field],
+  main: (threshold: Field, value: Field, multiplier: Field) => {
+    // Ensure inputs are within valid range
+    Gadgets.rangeCheck64(value);
+    Gadgets.rangeCheck64(multiplier);
+
+    // Check if value is above threshold
+    const isAbove = value.greaterThan(threshold);
+
+    // Conditional computation
+    const result = Provable.if(
+      isAbove,
+      value.mul(multiplier), // If above threshold, multiply
+      value.add(Field(1))    // If below, just add 1
+    );
+
+    // The result is constrained but not directly returned
+    // ZkFunction proves the computation was done correctly
+  },
+});
+
+// Usage
+const { verificationKey } = await conditionalFunction.compile();
+
+const proof = await conditionalFunction.prove(
+  Field(5),  // threshold (public)
+  Field(10), // value (private)
+  Field(3)   // multiplier (private)
+);
+
+const isValid = await conditionalFunction.verify(proof, verificationKey);
+console.log('Proof valid:', isValid); // true
+```
+
+### ZkFunction vs ZkProgram Comparison
+
+| Feature | ZkFunction | ZkProgram |
+|---------|------------|-----------|
+| **Proving Speed** | Fast (direct Kimchi) | Slower (through Pickles) |
+| **Recursion Support** | ❌ No | ✅ Yes |
+| **zkApp Compatibility** | ❌ No | ✅ Yes |
+| **API Complexity** | Simple | More complex |
+| **Use Case** | Standalone proofs | zkApp integration, recursion |
+
+### When to Use ZkFunction
+
+**Choose ZkFunction for:**
+- Standalone proof generation
+- Performance-critical applications
+- Simple computational proofs
+- Non-recursive use cases
+- Applications outside Mina ecosystem
+
+**Choose ZkProgram for:**
+- zkApp development
+- Recursive proof composition
+- Complex multi-method circuits
+- Mina Protocol integration
+
+### Performance Benefits
+
+```typescript
+// Benchmark example
+const benchmarkFunction = ZkFunction({
+  name: 'benchmark',
+  publicInput: Field,
+  publicOutput: Field,
+}, (x: Field) => {
+  let result = x;
+  for (let i = 0; i < 100; i++) {
+    result = result.add(Field(1));
+  }
+  return result;
+});
+
+// Compile once
+await benchmarkFunction.compile();
+
+// Measure proving time
+const startTime = Date.now();
+const proof = await benchmarkFunction.prove(Field(0));
+const provingTime = Date.now() - startTime;
+
+console.log(`Proving time: ${provingTime}ms`);
+console.log(`Result: ${proof.publicOutput.toString()}`); // "100"
+```
+
+### Migration from Circuit API
+
+**Old Circuit API (Deprecated):**
+```typescript
+// ❌ Deprecated - don't use
+import { Circuit, Field } from 'o1js';
+
+const oldCircuit = Circuit.withSecret([Field], (x) => {
+  return x.mul(x);
+});
+```
+
+**New ZkFunction API:**
+```typescript
+// ✅ Use this instead
+import { Field, Experimental } from 'o1js';
+const { ZkFunction } = Experimental;
+
+const newFunction = ZkFunction({
+  name: 'square',
+  publicInputType: Field,
+  privateInputTypes: [Field],
+  main: (publicSquare: Field, privateInput: Field) => {
+    privateInput.mul(privateInput).assertEquals(publicSquare);
+  },
+});
+```
+
+## Core Namespace: Low-Level Bindings (Unreleased)
+
+### Introduction to Core Namespace
+
+**Note**: The `Core` namespace is an **unreleased feature** in the latest o1js development that exposes low-level bindings and protocol constants for advanced users.
+
+```typescript
+import { Core } from 'o1js';
+
+// Access to internal protocol constants, hashes, and prefixes
+// This provides direct access to the underlying protocol layer
+// Use with caution - these are advanced internal APIs
+```
+
+### When to Use Core Namespace
+
+**Intended for:**
+- Advanced protocol developers
+- Custom cryptographic implementations
+- Deep integration with Mina Protocol internals
+- Performance-critical applications requiring low-level access
+
+**Not recommended for:**
+- General application development
+- Standard zkApp development
+- Learning o1js basics
+
+### Expected Core Features
+
+Based on the changelog, the Core namespace will likely expose:
+- **Protocol Constants**: Network parameters and consensus constants
+- **Hash Functions**: Internal hash algorithms and configurations
+- **Prefix Values**: Transaction and proof prefixes
+- **Binding Functions**: Direct access to OCaml bindings
+
+**Warning**: This is an advanced API that may change before official release. Use only for experimental development.
 
 This completes Part 2 covering the o1js framework in detail. Next we'll dive into smart contract development patterns and zkApp-specific implementations.

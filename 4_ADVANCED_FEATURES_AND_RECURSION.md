@@ -887,4 +887,299 @@ function mergeGameStates(
 }
 ```
 
+## RuntimeTable: Improved Lookup Table API (New in 2.9.0)
+
+### Introduction to RuntimeTable
+
+**RuntimeTable** is a new class introduced in o1js 2.9.0 that provides an improved API for working with lookup tables. It replaces the deprecated `Gates.addRuntimeTableConfig` and `Gadgets.inTable` functions with better readability and ergonomics.
+
+**Key Improvements:**
+- **Better readability**: More intuitive API design
+- **Type safety**: Improved TypeScript support
+- **Cleaner code**: Eliminates boilerplate from old API
+
+### Basic RuntimeTable Usage
+
+```typescript
+import { RuntimeTable, Field } from 'o1js';
+
+// Create a runtime table with predefined indices
+const lookupTable = new RuntimeTable(5, [10n, 20n, 30n, 40n, 50n]);
+
+// Populate the table with index-value pairs
+lookupTable.insert([
+  [10n, Field(100)], // 10 -> 100
+  [20n, Field(400)], // 20 -> 400
+  [30n, Field(900)], // 30 -> 900
+]);
+
+// Additional inserts (up to 3 pairs per insert call)
+lookupTable.insert([
+  [40n, Field(1600)], // 40 -> 1600
+  [50n, Field(2500)], // 50 -> 2500
+]);
+
+// Use in provable code for membership proofs
+function verifySquareLookup(index: bigint, expectedValue: Field) {
+  // Proves that (index, expectedValue) exists in the table
+  lookupTable.lookup(index, expectedValue);
+
+  // Important: flush pending lookups
+  lookupTable.check();
+}
+```
+
+### Complex RuntimeTable Example
+
+```typescript
+import { RuntimeTable, Field, SmartContract, method } from 'o1js';
+
+// Runtime table for precomputed hash values
+const hashTable = new RuntimeTable(10, [0n, 1n, 2n, 3n, 4n, 5n]);
+
+// Populate with precomputed hashes
+hashTable.insert([
+  [0n, Field('12345678901234567890')], // hash(0)
+  [1n, Field('98765432109876543210')], // hash(1)
+  [2n, Field('11111111111111111111')], // hash(2)
+]);
+
+hashTable.insert([
+  [3n, Field('22222222222222222222')], // hash(3)
+  [4n, Field('33333333333333333333')], // hash(4)
+  [5n, Field('44444444444444444444')], // hash(5)
+]);
+
+// Use in smart contract
+class OptimizedContract extends SmartContract {
+  @method async verifyPrecomputedHash(input: Field, expectedHash: Field) {
+    // Convert Field to bigint for table lookup
+    // Note: In real usage, you'd need proper conversion logic
+    const index = 0n; // Simplified for example
+
+    // Prove that the expected hash exists in our precomputed table
+    hashTable.lookup(index, expectedHash);
+
+    // Flush any pending lookups
+    hashTable.check();
+
+    // Additional verification logic here
+    input.assertEquals(Field(index));
+  }
+
+  @method async batchVerifyHashes(
+    input1: Field, hash1: Field,
+    input2: Field, hash2: Field,
+    input3: Field, hash3: Field
+  ) {
+    // Multiple lookups get batched automatically
+    hashTable.lookup(0n, hash1);
+    hashTable.lookup(1n, hash2);
+    hashTable.lookup(2n, hash3); // This completes a batch of 3
+
+    // No need to call check() here as the batch is complete
+    // But it's safe to call it anyway
+    hashTable.check();
+  }
+}
+```
+
+### Migration from Deprecated APIs
+
+**Old API (Deprecated in 2.9.0):**
+```typescript
+// ❌ Deprecated - don't use
+import { Gates, Gadgets, Field } from 'o1js';
+
+// Old way to add runtime table config
+Gates.addRuntimeTableConfig(1, [1n, 2n, 3n]);
+
+// Old way to lookup (manual gate calls)
+function oldLookup(index: bigint, value: Field): void {
+  // Manual lookup gate construction - error-prone
+  Gates.lookup(Field(1), Field(index), value, Field(index), value, Field(index), value);
+}
+
+// Or using Gadgets.inTable (also deprecated)
+function oldGadgetLookup(index: Field, value: Field): void {
+  Gadgets.inTable(Field(1), index, value);
+}
+```
+
+**New RuntimeTable API:**
+```typescript
+// ✅ Use this instead
+import { RuntimeTable, Field } from 'o1js';
+
+// New way with RuntimeTable class
+const myTable = new RuntimeTable(1, [1n, 2n, 3n]);
+
+// Populate the table
+myTable.insert([
+  [1n, Field(1)],
+  [2n, Field(4)],
+  [3n, Field(9)],
+]);
+
+// New way to lookup with automatic batching
+function newLookup(index: bigint, expectedValue: Field): void {
+  myTable.lookup(index, expectedValue); // Automatic batching
+  myTable.check(); // Flush pending lookups
+}
+```
+
+### Performance Benefits
+
+```typescript
+// Benchmark: Table lookup vs computation
+const fibIndices = Array.from({ length: 20 }, (_, i) => BigInt(i));
+const fibonacciTable = new RuntimeTable(20, fibIndices);
+
+// Precompute Fibonacci numbers
+const fibPairs: [bigint, Field][] = [];
+let a = 0, b = 1;
+for (let i = 0; i < 20; i++) {
+  fibPairs.push([BigInt(i), Field(a)]);
+  [a, b] = [b, a + b];
+}
+
+// Insert in batches of 3
+for (let i = 0; i < fibPairs.length; i += 3) {
+  const batch = fibPairs.slice(i, i + 3);
+  fibonacciTable.insert(batch);
+}
+
+// Fast lookup version
+function fastFibonacci(n: bigint, expectedFib: Field): void {
+  fibonacciTable.lookup(n, expectedFib); // Proves fib(n) = expectedFib
+  fibonacciTable.check();
+}
+
+// Slow computation version
+function slowFibonacci(n: UInt32): Field {
+  let a = Field(0);
+  let b = Field(1);
+
+  for (let i = 0; i < 1000; i++) {
+    const shouldSwap = UInt32.from(i).lessThan(n);
+    const newA = Provable.if(shouldSwap, b, a);
+    const newB = Provable.if(shouldSwap, a.add(b), b);
+    a = newA;
+    b = newB;
+  }
+
+  return a;
+}
+```
+
+### Advanced RuntimeTable Patterns
+
+```typescript
+// Pattern 1: Multiple related tables
+const additionTable = new RuntimeTable(1, [0n, 1n, 2n, 3n, 4n]);
+const multiplicationTable = new RuntimeTable(2, [0n, 1n, 2n, 3n, 4n]);
+
+// Populate addition results
+additionTable.insert([
+  [0n, Field(0)], // 0 + 0 = 0
+  [1n, Field(2)], // 1 + 1 = 2
+  [2n, Field(4)], // 2 + 2 = 4
+]);
+
+// Populate multiplication results
+multiplicationTable.insert([
+  [0n, Field(0)], // 0 * 0 = 0
+  [1n, Field(1)], // 1 * 1 = 1
+  [2n, Field(4)], // 2 * 2 = 4
+]);
+
+// Pattern 2: Conditional table usage
+function verifyOperation(
+  isAddition: boolean,
+  operand: bigint,
+  result: Field
+): void {
+  if (isAddition) {
+    additionTable.lookup(operand, result);
+  } else {
+    multiplicationTable.lookup(operand, result);
+  }
+
+  // Flush both tables to be safe
+  additionTable.check();
+  multiplicationTable.check();
+}
+
+// Pattern 3: Batch optimization
+function batchVerifySquares(
+  a: bigint, squareA: Field,
+  b: bigint, squareB: Field,
+  c: bigint, squareC: Field
+): void {
+  // These three lookups will be automatically batched into one gate
+  multiplicationTable.lookup(a, squareA);
+  multiplicationTable.lookup(b, squareB);
+  multiplicationTable.lookup(c, squareC);
+
+  // Batch is complete, no need to call check() but safe to do so
+  multiplicationTable.check();
+}
+```
+
+### Best Practices for RuntimeTable
+
+```typescript
+// 1. Use unique IDs for different table types
+const HASH_TABLE_ID = 10;
+const SIGNATURE_TABLE_ID = 11;
+const ARITHMETIC_TABLE_ID = 12;
+
+// 2. Predefine all possible indices at construction
+const hashIndices = Array.from({ length: 100 }, (_, i) => BigInt(i));
+const hashTable = new RuntimeTable(HASH_TABLE_ID, hashIndices);
+
+// 3. Insert in optimal batches of 3
+function populateHashTable(hashPairs: [bigint, Field][]): void {
+  for (let i = 0; i < hashPairs.length; i += 3) {
+    const batch = hashPairs.slice(i, i + 3);
+    hashTable.insert(batch);
+  }
+}
+
+// 4. Always call check() after lookup sequences
+function verifyHashChain(
+  input1: bigint, hash1: Field,
+  input2: bigint, hash2: Field
+): void {
+  hashTable.lookup(input1, hash1);
+  hashTable.lookup(input2, hash2);
+
+  // CRITICAL: Always flush pending lookups
+  hashTable.check();
+}
+
+// 5. Handle table size limits (max 2^16 entries)
+function createOptimalTable(data: [bigint, Field][]): RuntimeTable {
+  if (data.length > 65536) {
+    throw new Error('RuntimeTable size limit exceeded');
+  }
+
+  const indices = data.map(([index]) => index);
+  const table = new RuntimeTable(HASH_TABLE_ID, indices);
+
+  // Populate efficiently
+  populateHashTable(data);
+
+  return table;
+}
+
+// 6. Avoid ID collisions (0 and 1 are reserved)
+const RESERVED_IDS = [0, 1]; // XOR and range-check tables
+
+function getNextAvailableId(): number {
+  // Start from 2, increment for each new table type
+  return Math.max(...usedIds) + 1;
+}
+```
+
 This completes Part 4 covering advanced features and recursion. Next we'll dive into Zeko L2 architecture and integration patterns.

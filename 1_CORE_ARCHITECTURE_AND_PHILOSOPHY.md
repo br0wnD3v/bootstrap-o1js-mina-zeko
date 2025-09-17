@@ -328,13 +328,14 @@ const zekoL2 = Mina.Network({
 ## Version Information and Evolution
 
 ### o1js Evolution
-- **Current Version**: o1js 2.7.0 (released July 23, 2025)
+- **Current Version**: o1js 2.9.0 (released September 2, 2025)
 - **Previous Name**: SnarkyJS (49 versions, 43,141 downloads)
-- **Recent Features**:
-  - Lazy mode for prover index computation
-  - DynamicArray reverse functionality
-  - Single method analysis for ZkPrograms
-  - Enhanced constraint system analysis tools
+- **Recent Features (2.7.0 → 2.9.0)**:
+  - **Unreleased (Next)**: `Core` namespace for low-level bindings and protocol constants
+  - **2.9.0**: `RuntimeTable` class API, `ForeignField.Unsafe.fromField`, performance improvements
+  - **2.8.0**: `ZkFunction` API (via `Experimental.ZkFunction`), improved sourcemaps
+  - **2.7.0**: Lazy mode for prover index computation, `IndexedMerkleMap` promoted to public API
+  - DynamicArray reverse functionality and enhanced constraint system analysis tools
 
 ### Active Development Status
 - **Monthly Updates**: Regular o1js releases with new features
