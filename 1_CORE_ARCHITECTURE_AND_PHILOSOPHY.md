@@ -550,10 +550,10 @@ export class NetworkManager {
 
 ### o1js Evolution
 
-- **Current Version**: o1js 2.9.0 (released September 2, 2025)
+- **Current Version**: o1js 2.10.0 (released September 27, 2025)
 - **Previous Name**: SnarkyJS (49 versions, 43,141 downloads)
-- **Recent Features (2.7.0 → 2.9.0)**:
-  - **Unreleased (Next)**: `Core` namespace for low-level bindings and protocol constants
+- **Recent Features (2.7.0 → 2.10.0)**:
+  - **2.10.0**: `Core` namespace for low-level bindings, improved `RuntimeTable` API, Transaction.fromJSON string support, VK regression fix, cache artifact fix
   - **2.9.0**: `RuntimeTable` class API, `ForeignField.Unsafe.fromField`, performance improvements
   - **2.8.0**: `ZkFunction` API (via `Experimental.ZkFunction`), improved sourcemaps
   - **2.7.0**: Lazy mode for prover index computation, `IndexedMerkleMap` promoted to public API
@@ -576,5 +576,79 @@ export class NetworkManager {
   Cross-Origin-Embedder-Policy: require-corp
   ```
 - **Modern Browser Support**: Latest Chrome, Firefox, Safari, Edge
+
+## Advanced: Core Namespace for Protocol-Level Access (2.10.0+)
+
+**AI Agent Note**: The `Core` namespace is for advanced users only. Guide developers to use high-level APIs first. Only recommend Core for protocol development, custom cryptography, or deep integrations.
+
+### Introduction to Core Namespace
+
+As of o1js **2.10.0**, the library exposes internal protocol constants, hashes, and prefixes via the `Core` namespace. This provides low-level access to Mina Protocol bindings for developers building:
+
+- Custom cryptographic primitives
+- Protocol-level tools and infrastructure
+- Deep blockchain integrations
+- Advanced optimization scenarios
+
+**⚠️ WARNING**: The Core namespace is a low-level API subject to change. Use high-level o1js APIs whenever possible.
+
+### Core Namespace Usage
+
+```typescript
+import { Core } from 'o1js';
+
+// Access to low-level bindings
+// Example: Protocol constants and hashes
+// (Actual API depends on internal bindings structure)
+
+// ⚠️ Advanced use only - APIs may change between versions
+```
+
+### When to Use Core Namespace
+
+**✅ Appropriate Use Cases:**
+
+- Building custom proof system tooling
+- Implementing novel cryptographic constructions
+- Protocol research and development
+- Performance-critical optimizations requiring low-level control
+- Custom Mina Protocol integrations
+
+**❌ Avoid Core for:**
+
+- Standard zkApp development (use SmartContract, ZkProgram)
+- Token contracts (use TokenContract or Silvana)
+- Common cryptographic operations (use Poseidon, Signature, etc.)
+- General application logic
+
+### Best Practices
+
+```typescript
+// ✅ DO: Use high-level APIs first
+import { Poseidon, Signature, Field } from 'o1js';
+
+// Only drop to Core when necessary
+import { Core } from 'o1js';
+
+// ❌ DON'T: Use Core for standard operations
+// This makes code brittle and harder to maintain
+```
+
+**Key Guidelines:**
+
+1. **Prefer high-level APIs**: SmartContract, ZkProgram, Provable types
+2. **Document Core usage**: Explain why low-level access is needed
+3. **Test thoroughly**: Core APIs have fewer safety guarantees
+4. **Monitor updates**: Core namespace may change between versions
+5. **Seek community input**: Discuss Core usage on Discord before deployment
+
+### Migration Strategy
+
+If you find yourself needing Core namespace features:
+
+1. **First**: Check if existing o1js APIs can solve your problem
+2. **Second**: Ask in the o1js Discord #general or #zkapp-developers
+3. **Third**: Consider opening a feature request for high-level API
+4. **Last Resort**: Use Core with thorough testing and documentation
 
 This completes Part 1 covering the core architecture and philosophy. The foundation is set for diving into the technical implementation details in the subsequent parts.

@@ -73,7 +73,84 @@ class BasicContract extends SmartContract {
     // Update state
     this.isActive.set(isActive);
   }
+
+  // Method with return value - MUST use @method.returns() decorator
+  @method.returns(Field)
+  async getCounter(): Promise<Field> {
+    const counter = this.counter.getAndRequireEquals();
+    return counter;
+  }
+
+  // Method returning complex types
+  @method.returns(UInt64)
+  async calculateReward(user: PublicKey): Promise<UInt64> {
+    const balance = this.getBalance(user);  // hypothetical helper
+    const multiplier = UInt64.from(2);
+    return balance.mul(multiplier);
+  }
 }
+```
+
+#### **Method Return Values: @method.returns() Decorator**
+
+**From o1js source code (`src/lib/mina/v1/zkapp.ts:148-170`):**
+
+When a zkApp method needs to return a value, you **MUST** use the `@method.returns(Type)` decorator. The basic `@method` decorator alone does not support return values.
+
+```typescript
+import { SmartContract, method, Field, UInt64, PublicKey } from 'o1js';
+
+class MyContract extends SmartContract {
+  // ❌ WRONG: Basic @method doesn't support returns
+  @method
+  async getValue(): Promise<Field> {
+    return Field(42);  // This will NOT work as expected
+  }
+
+  // ✅ CORRECT: Use @method.returns(Type)
+  @method.returns(Field)
+  async getValue(): Promise<Field> {
+    return Field(42);
+  }
+
+  // ✅ CORRECT: Complex return types
+  @method.returns(UInt64)
+  async calculateBalance(user: PublicKey): Promise<UInt64> {
+    const state = this.balance.getAndRequireEquals();
+    return state;
+  }
+
+  // ✅ CORRECT: Custom struct returns
+  @method.returns(MyStruct)
+  async getMetadata(): Promise<MyStruct> {
+    return new MyStruct({ field1: Field(1), field2: Field(2) });
+  }
+
+  // ❌ WRONG: Forgetting type annotation
+  @method.returns(Field)
+  async getValue() {  // Missing Promise<Field> type
+    return Field(42);
+  }
+}
+```
+
+**Key Rules:**
+1. **Always use `@method.returns(Type)`** for methods that return values
+2. **Type must match** the Promise generic type in function signature
+3. **TypeScript type annotation** is still required (`Promise<Field>`)
+4. **Return type** must be a provable type (`Field`, `Bool`, `UInt64`, `Struct`, etc.)
+5. Works with all provable types including custom `Struct` definitions
+
+**Common Mistake:**
+```typescript
+// This compiles but behaves unexpectedly
+@method
+async compute(): Promise<Field> {
+  return Field(100);
+}
+
+// The return value is not properly constrained in the proof
+// Always use @method.returns() for return values!
 ```
 
 ### State Management Patterns
@@ -350,6 +427,44 @@ In traditional blockchains, transactions are ordered first, then executed. But M
 - **Action State**: 5 archived states (current + 4 previous) for ~15-minute proof generation window
 - **32-Action Limit**: Default reducer limitation requiring batch patterns for production
 
+---
+
+**⚠️ CRITICAL PRODUCTION SAFETY WARNING ⚠️**
+
+**The Reducer API in o1js 2.10.0 is NOT SAFE for production applications** if you expect more than 32 pending actions between reducer calls.
+
+**From o1js source code (`src/lib/mina/v1/actions/reducer.ts:65-67`):**
+> "The reducer API in o1js is currently not safe to use in production applications. The `reduce()` method breaks if more than the hard-coded number (default: 32) of actions are pending. Work is actively in progress to mitigate this limitation."
+
+**Failure Mode:**
+```typescript
+this.reducer.reduce(actions, stateType, reducerFn, initialState, {
+  maxUpdatesWithActions: 32  // DEFAULT - exceeding this BREAKS the circuit
+});
+// If >32 actions pending → circuit constraint failure → transaction rejected
+```
+
+**Production-Safe Workarounds:**
+
+1. **Use `Experimental.BatchReducer`** (see Part 4 Advanced Features section)
+   - Handles unlimited actions by processing in fixed-size batches
+   - Requires off-chain batch preparation + on-chain batch processing
+   - Recommended for any production deployment
+
+2. **Monitor action queue size off-chain**
+   - Track pending actions via `fetchActions()`
+   - Call `reduce()` before queue reaches 32
+   - Not reliable under high load
+
+3. **Increase `maxUpdatesWithActions` carefully**
+   - Higher values = more constraints = longer proof time
+   - Still hits hard circuit size limits
+   - Not a true solution for unbounded queues
+
+**DO NOT deploy reducer-based contracts to production without implementing one of these workarounds.**
+
+---
+
 #### **Basic Action/Reducer Pattern**
 
 ```typescript
@@ -406,7 +521,11 @@ class TokenWithActions extends SmartContract {
           return this.processTransfer(balancesRoot, action);
         },
         currentBalancesRoot, // Initial state
-        { maxUpdatesWithActions: 32 } // Limitation: max 32 actions
+        {
+          maxUpdatesWithActions: 32,  // DEFAULT: 32 - circuit BREAKS if exceeded
+          maxActionsPerUpdate: 1,      // Actions per account update
+          skipActionStatePrecondition: false
+        }
       );
 
     // Update state
@@ -816,6 +935,236 @@ export class OffchainStorageManager {
 }
 ```
 
+#### **Experimental.OffchainState: Production-Ready Off-Chain State**
+
+**AI Agent Note**: The above manual implementation is educational. For production, use `Experimental.OffchainState` which automates Merkle tree management, action batching, and settlement proofs.
+
+**Location in o1js**: `src/lib/mina/v1/actions/offchain-state.ts`
+
+**Key Advantages over Manual Implementation**:
+- Automatic Merkle tree management (IndexedMerkleMap)
+- Built-in settlement proof generation
+- Action-based updates with batching
+- Configurable capacity (up to 2^30 = 1B entries)
+- Type-safe Field and Map abstractions
+
+##### **Basic OffchainState Setup**
+
+```typescript
+import {
+  Experimental,
+  SmartContract,
+  State,
+  method,
+  PublicKey,
+  UInt64,
+  Field
+} from 'o1js';
+
+// Define your offchain state schema
+const offchainState = Experimental.OffchainState({
+  // Map for key-value storage (like account balances)
+  accounts: Experimental.OffchainState.Map(PublicKey, UInt64),
+
+  // Field for single values (like total supply)
+  totalSupply: Experimental.OffchainState.Field(UInt64),
+
+  // Additional fields/maps as needed
+  metadata: Experimental.OffchainState.Field(Field)
+}, {
+  // Configuration options
+  logTotalCapacity: 30,      // 2^30 = ~1 billion entries (default)
+  maxActionsPerUpdate: 4,    // Max state updates per contract method (default)
+  maxActionsPerProof: undefined  // Auto-calculated based on circuit size
+});
+
+// Compile the offchain state program
+await offchainState.compile();
+
+// Create contract-specific instance
+class MyContract extends SmartContract {
+  // On-chain commitment to offchain state
+  @state(Experimental.OffchainStateCommitments)
+  offchainStateCommitments = State(
+    Experimental.OffchainStateCommitments.empty()
+  );
+
+  // Connect offchain state instance
+  offchainState = offchainState.init(this);
+
+  init() {
+    super.init();
+    // Initialize commitments
+    this.offchainStateCommitments.set(
+      Experimental.OffchainStateCommitments.empty()
+    );
+  }
+}
+```
+
+##### **Using OffchainState Fields**
+
+```typescript
+class TokenContract extends SmartContract {
+  @state(Experimental.OffchainStateCommitments) commitments = State(
+    Experimental.OffchainStateCommitments.empty()
+  );
+
+  offchainState = offchainState.init(this);
+
+  // Update offchain state (queues actions)
+  @method async mint(recipient: PublicKey, amount: UInt64) {
+    // Get current balance
+    let currentBalance = await this.offchainState.fields.accounts.get(recipient);
+    let balance = currentBalance.orElse(UInt64.zero);  // Default to 0 if not found
+
+    // Update balance (queues action)
+    this.offchainState.fields.accounts.set(recipient, balance.add(amount));
+
+    // Update total supply (queues action)
+    let supply = await this.offchainState.fields.totalSupply.get();
+    this.offchainState.fields.totalSupply.set(
+      supply.orElse(UInt64.zero).add(amount)
+    );
+  }
+
+  @method async transfer(to: PublicKey, amount: UInt64) {
+    let from = this.sender.getAndRequireSignature();
+
+    // Get balances
+    let fromBalance = await this.offchainState.fields.accounts.get(from);
+    let toBalance = await this.offchainState.fields.accounts.get(to);
+
+    // Validate
+    let fromAmount = fromBalance.assertSome('Sender account not found');
+    fromAmount.assertGreaterThanOrEqual(amount);
+
+    // Update both accounts
+    this.offchainState.fields.accounts.set(from, fromAmount.sub(amount));
+    this.offchainState.fields.accounts.set(
+      to,
+      toBalance.orElse(UInt64.zero).add(amount)
+    );
+  }
+}
+```
+
+##### **Settlement Proof Workflow**
+
+```typescript
+// 1. Off-chain: Prepare settlement proof
+const contract = new TokenContract(contractAddress);
+const proof = await contract.offchainState.createSettlementProof();
+
+// 2. On-chain: Settle state updates
+@method async settle(proof: StateProof) {
+  await this.offchainState.settle(proof);
+  // This updates the on-chain commitment to match off-chain state
+}
+
+// 3. Execute settlement transaction
+const tx = await Mina.transaction(feePayerKey, async () => {
+  await contract.settle(proof);
+});
+await tx.prove();
+await tx.sign([feePayerKey]).send();
+```
+
+##### **Configuration Trade-offs**
+
+```typescript
+// SMALL STATE: Fast proofs, limited capacity
+Experimental.OffchainState(schema, {
+  logTotalCapacity: 20,      // 2^20 = ~1M entries
+  maxActionsPerUpdate: 2,    // Fewer constraints
+  maxActionsPerProof: 100    // More proofs needed
+});
+
+// LARGE STATE: Slower proofs, high capacity
+Experimental.OffchainState(schema, {
+  logTotalCapacity: 30,      // 2^30 = ~1B entries (default)
+  maxActionsPerUpdate: 4,    // More updates per method
+  maxActionsPerProof: 10     // Fewer but heavier proofs
+});
+
+// BALANCED (Recommended for most applications)
+Experimental.OffchainState(schema, {
+  logTotalCapacity: 25,      // 2^25 = ~33M entries
+  maxActionsPerUpdate: 4,    // Standard
+  // maxActionsPerProof auto-calculated
+});
+```
+
+##### **Best Practices**
+
+**1. Separate Read and Write Methods**
+```typescript
+// Pure read (no state changes)
+@method async getBalance(user: PublicKey): Promise<UInt64> {
+  let balance = await this.offchainState.fields.accounts.get(user);
+  return balance.assertSome('Account not found');
+}
+
+// Write only (queues actions)
+@method async updateBalance(user: PublicKey, newBalance: UInt64) {
+  this.offchainState.fields.accounts.set(user, newBalance);
+}
+```
+
+**2. Batch Settlement Regularly**
+```typescript
+// Off-chain worker: monitor action queue
+setInterval(async () => {
+  const pendingActions = await fetchPendingActions(contract);
+
+  if (pendingActions.length > 100) {
+    const proof = await contract.offchainState.createSettlementProof();
+    await submitSettlement(proof);
+  }
+}, 60000);  // Every minute
+```
+
+**3. Handle Option Types Correctly**
+```typescript
+// ✅ CORRECT: Use orElse() for defaults
+let balance = await offchainState.fields.accounts.get(user);
+let amount = balance.orElse(UInt64.zero);
+
+// ✅ CORRECT: Use assertSome() when value must exist
+let balance = await offchainState.fields.accounts.get(user);
+let amount = balance.assertSome('Account does not exist');
+
+// ❌ WRONG: Don't unwrap without handling None case
+let balance = await offchainState.fields.accounts.get(user);
+// balance.value // Will fail if account doesn't exist
+```
+
+**4. Action Limit Management**
+```typescript
+@method async complexUpdate(users: PublicKey[]) {
+  // Be aware of maxActionsPerUpdate limit (default 4)
+  // This method can update at most 4 accounts
+  for (let i = 0; i < Math.min(users.length, 4); i++) {
+    this.offchainState.fields.accounts.set(users[i], UInt64.from(100));
+  }
+  // If more updates needed, split into multiple methods/transactions
+}
+```
+
+##### **OffchainState vs Manual Merkle Trees**
+
+| Feature | Experimental.OffchainState | Manual MerkleMap |
+|---------|---------------------------|------------------|
+| **Setup complexity** | Minimal | High |
+| **Merkle tree management** | Automatic | Manual |
+| **Settlement proofs** | Built-in | Custom implementation |
+| **Type safety** | Strong | Weak |
+| **Action batching** | Automatic | Manual |
+| **Capacity** | Configurable (up to 2^30) | Limited by circuit size |
+| **Production ready** | ✅ Yes | ⚠️ Error-prone |
+
+**Recommendation**: Use `Experimental.OffchainState` for all new contracts requiring off-chain state. Only use manual Merkle trees for educational purposes or very specific custom requirements.
+
 #### **Key Takeaways**
 
 - **Use actions/reducers when multiple users need to update shared state concurrently**
@@ -988,11 +1337,56 @@ class MyToken extends TokenContract {
 }
 ```
 
+**⚠️ CRITICAL TOKEN CONTRACT LIMITS ⚠️**
+
+**From o1js source code (`src/lib/mina/v1/token/token-contract.ts:29`):**
+```typescript
+abstract class TokenContract extends SmartContract {
+  static MAX_ACCOUNT_UPDATES = 9;  // Per transaction limit
+}
+```
+
+**This means:**
+- A single token transaction can approve at most **9 account updates** using the token
+- Exceeding this limit causes circuit constraint failures
+- Complex multi-party transfers must be split into multiple transactions
+- This is a hard limit enforced at the circuit level
+
+**Example Constraints:**
+```typescript
+// ✅ OK: 2 accounts (sender + receiver) = 2 updates
+token.transfer(alice, bob, UInt64.from(100));
+
+// ✅ OK: 1 account (recipient) = 1 update
+token.mint(alice, UInt64.from(100));
+
+// ❌ FAILS: 10 recipients = 10 updates (exceeds limit)
+for (let i = 0; i < 10; i++) {
+  token.transfer(alice, recipients[i], UInt64.from(10));
+}
+
+// ✅ OK: Batch into 2 transactions (4 + 5 recipients)
+// Transaction 1: recipients[0-3]
+// Transaction 2: recipients[4-8]
+```
+
+**Workarounds:**
+1. **Batch transactions**: Split large operations into multiple txs
+2. **Increase limit in subclass** (increases proof time):
+```typescript
+class MyToken extends TokenContract {
+  static MAX_ACCOUNT_UPDATES = 15;  // Custom limit (use carefully)
+}
+```
+3. **Use off-chain state**: Handle bulk operations via `Experimental.OffchainState`
+
+---
+
 **Deployment Gotchas (AI agent must enforce):**
 
 - `FungibleToken.deploy()` sets `paused` to `Bool(true)` until `initialize()` runs; call `resume()` or pass `Bool(false)` so minting/transfers open up. See `mina-fungible-token/FungibleToken.ts:70` and `mina-fungible-token/FungibleToken.ts:102`.
 - The `startPaused` parameter in `initialize(admin, decimals, startPaused)` controls whether the contract stays paused after init. Pass `Bool(true)` when a staggered deploy is required, `Bool(false)` for immediate activity.
-- `approveBase()` in the standard enforces zero net balance change and blocks use of the circulation account, and the base `TokenContract` caps approved forests at 9 updates via `TokenContract.MAX_ACCOUNT_UPDATES`. Batch complex transfers accordingly (`mina-fungible-token/FungibleToken.ts:205`, `o1js/src/lib/mina/v1/token/token-contract.ts:29`).
+- `approveBase()` in the standard enforces zero net balance change and blocks use of the circulation account.
 
 **Key Features:**
 

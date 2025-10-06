@@ -931,19 +931,100 @@ function mergeGameStates(
 }
 ```
 
-## RuntimeTable: Improved Lookup Table API (New in 2.9.0)
+## RuntimeTable: Improved Lookup Table API (Introduced 2.9.0, Enhanced 2.10.0)
 
 ### Introduction to RuntimeTable
 
-**AI Agent Note**: RuntimeTable provides efficient lookup operations for large datasets. This is the current API - deprecated lookup methods have been removed from documentation.
+**AI Agent Note**: RuntimeTable provides efficient provable lookup operations for runtime-defined tables. Use this for membership proofs of (index, value) pairs with automatic batching.
 
-**RuntimeTable** is a new class introduced in o1js 2.9.0 that provides an improved API for working with lookup tables. It replaces the deprecated `Gates.addRuntimeTableConfig` and `Gadgets.inTable` functions with better readability and ergonomics.
+**RuntimeTable** is the current API for working with runtime lookup tables in o1js. It provides an ergonomic class-based interface for defining tables whose entries are determined at circuit construction time.
 
-**Key Improvements:**
+**Key Features (as of 2.10.0):**
 
-- **Better readability**: More intuitive API design
-- **Type safety**: Improved TypeScript support
-- **Cleaner code**: Eliminates boilerplate from old API
+- **Automatic batching**: Groups up to 3 lookup pairs per gate automatically
+- **Better readability**: Intuitive `.insert()`, `.lookup()`, `.check()` API
+- **Type safety**: Full TypeScript support with compile-time checks
+- **Efficient gates**: ~`ceil(#pairs / 3)` lookup gates per table
+
+**Replaces Deprecated APIs:**
+
+```typescript
+// ❌ DEPRECATED (DO NOT USE - will be removed)
+Gates.addRuntimeTableConfig(id, indices);
+Gadgets.inTable(id, index, value);
+
+// ✅ CURRENT API (o1js 2.9.0+)
+const table = new RuntimeTable(id, indices);
+table.insert([[index, value]]);
+table.lookup(index, value);
+table.check();
+```
+
+**When to Use RuntimeTable:**
+
+- ✅ Small/medium runtime-chosen sets of (index, value) pairs
+- ✅ Membership proofs with known index space
+- ✅ Precomputed lookup tables (hashes, arithmetic, etc.)
+- ❌ NOT for: huge tables (>65K entries), mutable data, unknown indices
+
+### Constraints and Requirements
+
+**CRITICAL INVARIANTS:**
+
+```typescript
+// 1. Table ID must NOT be 0 or 1 (reserved for XOR and range-check tables)
+const table = new RuntimeTable(2, [0n, 1n, 2n]); // ✅ OK
+const badTable = new RuntimeTable(0, [0n, 1n]); // ❌ THROWS ERROR
+
+// 2. Indices must be UNIQUE (duplicates rejected)
+const uniqueTable = new RuntimeTable(3, [10n, 20n, 30n]); // ✅ OK
+const dupTable = new RuntimeTable(3, [10n, 10n, 20n]); // ❌ THROWS ERROR
+
+// 3. Indices must be KNOWN at construction time
+const knownIndices = [0n, 1n, 2n];
+const dynamicTable = new RuntimeTable(4, knownIndices); // ✅ OK
+
+// 4. ALWAYS call check() to flush pending lookups (1-2 pairs)
+dynamicTable.lookup(0n, Field(123));
+dynamicTable.lookup(1n, Field(456));
+dynamicTable.check(); // ✅ REQUIRED - flushes 2 pending lookups
+
+// 5. zkApps using RuntimeTable MUST compile with withRuntimeTables flag
+await MyContract.compile({ withRuntimeTables: true });
+```
+
+**Size Limits:**
+
+- Maximum table size: **2^16 (65,536) entries**
+- Maximum indices must be < circuit size limit
+- Each lookup gate can batch **3 pairs** maximum
+
+---
+
+**⚠️ COMPILATION REQUIREMENT ⚠️**
+
+**Any contract or ZkProgram using `RuntimeTable` MUST be compiled with the `withRuntimeTables: true` flag**, otherwise you'll get runtime errors when the circuit tries to use lookup gates.
+
+```typescript
+// SmartContract compilation
+await MyContract.compile({
+  withRuntimeTables: true  // REQUIRED for RuntimeTable usage
+});
+
+// ZkProgram compilation
+await MyProgram.compile({
+  withRuntimeTables: true  // REQUIRED for RuntimeTable usage
+});
+```
+
+**What happens if you forget this flag:**
+- Circuit compilation may succeed
+- Runtime proof generation will FAIL with lookup gate errors
+- No compile-time warning (silent failure mode)
+
+**Always enable this flag if your code uses `RuntimeTable` anywhere in the call chain.**
+
+---
 
 ### Basic RuntimeTable Usage
 
@@ -954,13 +1035,14 @@ import { RuntimeTable, Field } from "o1js";
 const lookupTable = new RuntimeTable(5, [10n, 20n, 30n, 40n, 50n]);
 
 // Populate the table with index-value pairs
+// Note: insert() accepts up to any number of pairs, batches into groups of 3
 lookupTable.insert([
   [10n, Field(100)], // 10 -> 100
   [20n, Field(400)], // 20 -> 400
   [30n, Field(900)], // 30 -> 900
 ]);
 
-// Additional inserts (up to 3 pairs per insert call)
+// Additional inserts
 lookupTable.insert([
   [40n, Field(1600)], // 40 -> 1600
   [50n, Field(2500)], // 50 -> 2500
@@ -968,10 +1050,11 @@ lookupTable.insert([
 
 // Use in provable code for membership proofs
 function verifySquareLookup(index: bigint, expectedValue: Field) {
-  // Proves that (index, expectedValue) exists in the table
+  // Constrains that (index, expectedValue) EXISTS in the table
   lookupTable.lookup(index, expectedValue);
 
-  // Important: flush pending lookups
+  // CRITICAL: flush pending lookups
+  // Without check(), the last 1-2 lookups won't be constrained!
   lookupTable.check();
 }
 ```
@@ -1193,5 +1276,306 @@ function getNextAvailableId(): number {
   return Math.max(...usedIds) + 1;
 }
 ```
+
+## Experimental APIs: Production-Ready Patterns
+
+**AI Agent Note**: The `Experimental` namespace contains APIs that are stable and production-ready, but whose interfaces may change in future versions. These are essential for real-world applications.
+
+### Experimental.BatchReducer: Handling Unlimited Actions
+
+**Location in o1js**: `src/index.ts:194-226`, `src/lib/mina/v1/actions/batch-reducer.ts`
+
+**Purpose**: Solve the Reducer 32-action limit by processing actions in fixed-size batches.
+
+**Critical Use Case**: Any production contract expecting >32 actions between reducer calls.
+
+#### How BatchReducer Works
+
+```typescript
+import { Experimental, Field, SmartContract, method } from 'o1js';
+
+// 1. Define your action type
+class MyAction extends Struct({
+  value: Field,
+  timestamp: UInt64
+}) {}
+
+// 2. Create BatchReducer with fixed batch size
+const batchReducer = new Experimental.BatchReducer({
+  actionType: MyAction,
+  batchSize: 5  // Process 5 actions per batch
+});
+
+class MyContract extends SmartContract {
+  @state(Field) actionState = State<Field>();
+  @state(Field) currentValue = State<Field>();
+
+  // Dispatch actions (no limit, can be called concurrently)
+  @method async dispatchAction(value: Field, timestamp: UInt64) {
+    batchReducer.dispatch(new MyAction({ value, timestamp }));
+  }
+
+  // Process ONE batch of actions (called multiple times off-chain)
+  @method async processBatch(
+    batch: Experimental.ActionBatch<MyAction>,
+    proof: any  // Proof that batch is valid
+  ) {
+    let state = this.currentValue.getAndRequireEquals();
+
+    // Process each action in the batch
+    batchReducer.processBatch({ batch, proof }, (action, isDummy) => {
+      // isDummy is true for padding actions (batch not full)
+      state = Provable.if(
+        isDummy,
+        state,  // Keep state unchanged for dummy actions
+        state.add(action.value)  // Update for real actions
+      );
+    });
+
+    this.currentValue.set(state);
+  }
+}
+```
+
+#### Off-Chain Batch Preparation
+
+```typescript
+// Off-chain worker prepares batches
+async function prepareBatches(contract: MyContract) {
+  // Fetch all pending actions
+  const actions = await contract.account.actionState.fetch();
+
+  // Prepare batches (each batch gets a proof)
+  const batches = await batchReducer.prepareBatches();
+
+  // Returns array of { batch, proof } objects
+  // Each batch contains up to `batchSize` actions
+  return batches;
+}
+
+// Execute on-chain processing
+async function settleBatches(contract: MyContract) {
+  const batches = await prepareBatches(contract);
+
+  // Process each batch in a separate transaction
+  for (const { batch, proof } of batches) {
+    const tx = await Mina.transaction(feePayerKey, async () => {
+      await contract.processBatch(batch, proof);
+    });
+    await tx.prove();
+    await tx.sign([feePayerKey]).send();
+  }
+}
+```
+
+#### BatchReducer Best Practices
+
+**1. Choose Batch Size Carefully**
+```typescript
+// Smaller batches = more transactions, less constraints per batch
+new Experimental.BatchReducer({ actionType: Action, batchSize: 3 });
+
+// Larger batches = fewer transactions, more constraints per batch
+new Experimental.BatchReducer({ actionType: Action, batchSize: 10 });
+
+// Balance based on:
+// - Expected action volume
+// - Circuit complexity per action
+// - Gas costs vs proof time trade-off
+```
+
+**2. Handle Dummy Actions**
+```typescript
+batchReducer.processBatch({ batch, proof }, (action, isDummy) => {
+  // ALWAYS use Provable.if() to handle dummy actions
+  state = Provable.if(
+    isDummy,
+    state,  // No-op for padding
+    updateState(state, action)  // Real logic
+  );
+});
+```
+
+**3. Off-Chain Batch Coordination**
+```typescript
+// Monitor action queue size
+const pendingCount = await fetchActionCount(contract);
+
+// Trigger batch processing when threshold reached
+if (pendingCount >= batchSize * 2) {
+  await settleBatches(contract);
+}
+```
+
+**4. Parallel Batch Processing**
+```typescript
+// Multiple batches can be prepared in parallel
+const batches = await batchReducer.prepareBatches();
+
+// But on-chain settlement must be sequential (due to action state)
+for (const batch of batches) {
+  await processAndWaitForInclusion(batch);
+}
+```
+
+### Experimental.ZkFunction: Standalone Provable Functions
+
+**Location in o1js**: `src/index.ts:179`, `src/lib/proof-system/zkfunction.ts`
+
+**Purpose**: Create standalone provable functions that can be used outside of SmartContracts or ZkPrograms.
+
+**Use Cases**:
+- Reusable provable logic across multiple contracts
+- Client-side proof generation without blockchain interaction
+- Proof composition and aggregation
+
+#### ZkFunction Example
+
+```typescript
+import { Experimental, Field, Provable } from 'o1js';
+
+// Define a standalone provable function
+const multiplyAndAdd = Experimental.ZkFunction({
+  name: 'multiplyAndAdd',
+  inputs: [Field, Field, Field],  // a, b, c
+  body: (a: Field, b: Field, c: Field) => {
+    const product = a.mul(b);
+    const result = product.add(c);
+
+    // Add constraints
+    result.assertGreaterThan(Field(100));
+
+    return result;
+  }
+});
+
+// Use in a SmartContract
+class MyContract extends SmartContract {
+  @method async compute(a: Field, b: Field, c: Field) {
+    const result = multiplyAndAdd(a, b, c);
+    // result is constrained by the ZkFunction logic
+    this.emitEvent('Computed', result);
+  }
+}
+
+// Or use standalone
+const result = multiplyAndAdd(Field(5), Field(10), Field(60));
+// Returns Field(110), with constraints checked
+```
+
+#### ZkFunction vs ZkProgram vs SmartContract
+
+| Feature | ZkFunction | ZkProgram | SmartContract |
+|---------|-----------|-----------|---------------|
+| **Proof generation** | ❌ No | ✅ Yes | ✅ Yes |
+| **Reusable logic** | ✅ Yes | ⚠️ Via methods | ⚠️ Via inheritance |
+| **Client-side only** | ✅ Yes | ✅ Yes | ❌ Requires blockchain |
+| **Composable** | ✅ Highly | ⚠️ Limited | ❌ No |
+| **Use case** | Shared logic | Off-chain proofs | On-chain state |
+
+### Experimental.OffchainState: Scalable State Management
+
+**Location in o1js**: `src/lib/mina/v1/actions/offchain-state.ts`
+
+**Purpose**: Store large amounts of state off-chain while maintaining cryptographic commitments on-chain.
+
+**See Part 3** for comprehensive `OffchainState` documentation including:
+- `OffchainState.Field()` vs `OffchainState.Map()` patterns
+- Configuration options (`logTotalCapacity`, `maxActionsPerUpdate`)
+- Settlement proof workflow
+- Production deployment patterns
+
+**Quick Reference**:
+```typescript
+import { Experimental, OffchainStateCommitments } from 'o1js';
+
+const offchainState = Experimental.OffchainState({
+  balances: Experimental.OffchainState.Map(PublicKey, UInt64),
+  totalSupply: Experimental.OffchainState.Field(UInt64)
+}, {
+  logTotalCapacity: 30,  // 2^30 = ~1B entries
+  maxActionsPerUpdate: 4  // Max updates per contract method
+});
+
+// Usage in contract - see Part 3 for full examples
+class MyContract extends SmartContract {
+  @state(OffchainStateCommitments) offchainState = State(
+    OffchainStateCommitments.empty()
+  );
+
+  offchainState = offchainStateInstance;
+}
+```
+
+### Experimental.Recursive: Advanced Proof Composition
+
+**Location in o1js**: `src/lib/proof-system/recursive.ts`
+
+**Purpose**: Enable recursive proof composition with type safety.
+
+```typescript
+import { Experimental, ZkProgram, Field } from 'o1js';
+
+// Mark a proof as recursively composable
+class MyProof extends Experimental.Recursive(
+  Proof<Field, Field>
+) {}
+
+// Use in ZkProgram for infinite recursion
+const RecursiveProgram = ZkProgram({
+  name: 'RecursiveProgram',
+  methods: {
+    base: {
+      privateInputs: [Field],
+      async method(input: Field) {
+        return { publicOutput: input };
+      }
+    },
+    recursive: {
+      privateInputs: [MyProof, Field],
+      async method(proof: MyProof, newInput: Field) {
+        proof.verify();  // Verify previous proof
+        const result = proof.publicOutput.add(newInput);
+        return { publicOutput: result };
+      }
+    }
+  }
+});
+```
+
+### Experimental.V2: Future Mina API Preview
+
+**Location in o1js**: `src/index.ts:138-170`, `src/lib/mina/v2/`
+
+**Status**: EXPERIMENTAL - API will change
+
+**Purpose**: Preview of the upcoming Mina v2 smart contract API with improved ergonomics.
+
+**Key Differences from V1**:
+- Simplified state management
+- Enhanced method signatures
+- Better TypeScript inference
+- Improved transaction composition
+
+**AI Agent Guidance**: Do NOT recommend V2 API for production. Mention it exists for forward-looking developers, but emphasize it's subject to breaking changes.
+
+```typescript
+import { Experimental } from 'o1js';
+
+// V2 preview - DO NOT USE IN PRODUCTION
+const MyV2Contract = Experimental.V2.defineContract({
+  // New API surface - subject to change
+  state: {
+    balance: Field,
+  },
+  methods: {
+    async transfer(amount: Field) {
+      // Improved ergonomics (details TBD)
+    }
+  }
+});
+```
+
+---
 
 This completes Part 4 covering advanced features and recursion. Next we'll dive into Zeko L2 architecture and integration patterns.

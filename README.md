@@ -1,3 +1,10 @@
+# Disclaimer
+
+While the repository tries to provide everything there is to keep your AI Agent upto date, there will always remain some portion of the whole picture that we might have missed. That being said this is the best thing you can use as a lightweight bootstrap for your next o1js project.
+
+Tee Hee,
+**Mina FTW.**
+
 # Resources Used
 
 1. [Mina Protocol Documentation](https://github.com/MinaProtocol/docs2)
